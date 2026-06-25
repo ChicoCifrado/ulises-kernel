@@ -48,10 +48,42 @@ pub fn rdmsr(msr: u32) u64 {
     return (@as(u64, hi) << 32) | lo;
 }
 
+pub fn outb(port: u16, val: u8) void {
+    asm volatile ("outb %[val], %[port]"
+        :
+        : [val] "{al}" (val),
+          [port] "{dx}" (port)
+    );
+}
+
+pub fn outw(port: u16, val: u16) void {
+    asm volatile ("outw %[val], %[port]"
+        :
+        : [val] "{ax}" (val),
+          [port] "{dx}" (port)
+    );
+}
+
+pub fn outl(port: u16, val: u32) void {
+    asm volatile ("outl %[val], %[port]"
+        :
+        : [val] "{eax}" (val),
+          [port] "{dx}" (port)
+    );
+}
+
+pub fn inb(port: u16) u8 {
+    var val: u8 = undefined;
+    asm volatile ("inb %[port], %[val]"
+        : [val] "={al}" (val)
+        : [port] "{dx}" (port)
+    );
+    return val;
+}
+
 pub fn initCpu() void {
     const result = cpuid(1, 0);
     _ = result;
-    sti();
 }
 
 test "cpuid works" {

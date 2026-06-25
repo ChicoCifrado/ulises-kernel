@@ -50,6 +50,7 @@ pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, addr
 pub export fn kmain() noreturn {
     var h = hal.Hal.init();
     initPlatform();
+    initInterrupts();
     initBootDevices();
 
     var page_mem: [1024 * 4096]u8 align(4096) = undefined;
@@ -91,6 +92,18 @@ fn initPlatform() void {
         .aarch64, .arm => {},
         .riscv64 => {},
         else => {},
+    }
+}
+
+fn initInterrupts() void {
+    if (builtin.target.cpu.arch == .x86_64 and builtin.target.os.tag == .freestanding and !builtin.is_test) {
+        const idt_mod = @import("arch/x86_64/idt.zig");
+        const Handler = struct {
+            fn callback(frame: *const idt_mod.InterruptFrame) callconv(.C) void {
+                _ = frame;
+            }
+        };
+        idt_mod.init(Handler.callback);
     }
 }
 
