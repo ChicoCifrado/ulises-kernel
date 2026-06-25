@@ -39,8 +39,8 @@ pub const InterruptFrame = packed struct {
     r13: u64,
     r14: u64,
     r15: u64,
-    error_code: u64,
     vector: u64,
+    error_code: u64,
     rip: u64,
     cs: u64,
     rflags: u64,
@@ -58,7 +58,7 @@ fn hasErrorCode(vector: u8) bool {
 }
 
 export var idt: [NUM_VECTORS]IdtEntry align(16) linksection(".data.idt") = [_]IdtEntry{@bitCast(@as(u128, 0))} ** NUM_VECTORS;
-export var common_handler_fn: ?*const fn (*const InterruptFrame) callconv(.C) void = null;
+export var common_handler_fn: ?*const fn (*const InterruptFrame) callconv(.C) u64 = null;
 
 export fn isrCommon() callconv(.Naked) void {
     asm volatile (
@@ -79,6 +79,7 @@ export fn isrCommon() callconv(.Naked) void {
         \\movq %rsp, %rdi
         \\cld
         \\callq *common_handler_fn(%rip)
+        \\movq %rax, %rsp
         \\popq %rdi
         \\popq %rsi
         \\popq %rdx
@@ -145,7 +146,7 @@ pub fn picDisable() void {
     x86_64.outb(0xA1, 0xFF);
 }
 
-pub fn init(callback: *const fn (*const InterruptFrame) callconv(.C) void) void {
+pub fn init(callback: *const fn (*const InterruptFrame) callconv(.C) u64) void {
     common_handler_fn = callback;
     for (0..NUM_VECTORS) |i| {
         const handler_addr = @intFromPtr(stubs[i]);

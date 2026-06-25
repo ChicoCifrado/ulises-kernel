@@ -8,7 +8,7 @@ const TICK_HZ = 100;
 
 export var timer_ticks: u64 = 0;
 
-pub fn init(callback: *const fn (*const idt_mod.InterruptFrame) callconv(.C) void) void {
+pub fn init(callback: *const fn (*const idt_mod.InterruptFrame) callconv(.C) u64) void {
     _ = callback;
     const divisor: u16 = @intCast(PIT_BASE_FREQ / TICK_HZ);
     x86_64.outb(0x43, 0x34);
@@ -18,15 +18,8 @@ pub fn init(callback: *const fn (*const idt_mod.InterruptFrame) callconv(.C) voi
 }
 
 pub fn eoi() void {
-    const LAPIC_EOI: u32 = 0xB0;
     const lapic_base = smp.getLapicBase();
-    @as([*]volatile u32, @ptrFromInt(lapic_base + LAPIC_EOI))[0] = 0;
-}
-
-pub fn handler(frame: *const idt_mod.InterruptFrame) callconv(.C) void {
-    _ = frame;
-    timer_ticks += 1;
-    eoi();
+    @as([*]volatile u32, @ptrFromInt(lapic_base + 0xB0))[0] = 0;
 }
 
 pub fn getTicks() u64 {

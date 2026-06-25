@@ -138,14 +138,17 @@ fn initInterrupts() void {
     if (builtin.target.cpu.arch == .x86_64 and builtin.target.os.tag == .freestanding and !builtin.is_test) {
         const idt_mod = @import("arch/x86_64/idt.zig");
         const timer = @import("arch/x86_64/timer.zig");
+        const sched = @import("sched/scheduler.zig");
         const Handler = struct {
-            fn callback(frame: *const idt_mod.InterruptFrame) callconv(.C) void {
+            fn callback(frame: *const idt_mod.InterruptFrame) callconv(.C) u64 {
                 const vec = frame.vector;
                 if (vec == 0x20) {
-                    timer.handler(frame);
+                    return sched.onTimerTick(frame);
                 }
+                return @intFromPtr(frame);
             }
         };
+        sched.init();
         idt_mod.init(Handler.callback);
         timer.init(Handler.callback);
         x86_64.sti();
