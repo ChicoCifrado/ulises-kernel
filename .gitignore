@@ -7,3 +7,5 @@ zig-out/
 *.so
 *.dylib
 /tmp/
+steamdeck-*.img*
+*.bz2

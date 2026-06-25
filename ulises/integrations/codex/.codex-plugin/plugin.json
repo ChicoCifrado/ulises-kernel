@@ -1,0 +1,22 @@
+{
+  "name": "ulises",
+  "version": "0.1.1",
+  "description": "Connect Codex to a scoped Ulises instance.",
+  "author": {
+    "name": "Ulises"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Ulises",
+    "shortDescription": "Use scoped Ulises tools from Codex.",
+    "longDescription": "Connects Codex terminal sessions to Ulises through user-controlled scoped API tokens. Codex must use /api/codex/* endpoints so Ulises Settings can enforce tool access.",
+    "developerName": "Ulises",
+    "category": "Productivity",
+    "capabilities": [
+      "todos",
+      "email",
+      "scoped-api"
+    ],
+    "defaultPrompt": "Use Ulises only through configured scoped access. Check capabilities before reading or writing data."
+  }
+}

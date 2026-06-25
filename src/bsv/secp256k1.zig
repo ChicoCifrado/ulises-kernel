@@ -78,6 +78,7 @@ fn feGte(a: Fe, b: Fe) bool {
 }
 
 fn feMul(a: Fe, b: Fe) Fe {
+    @setRuntimeSafety(false);
     var t: [16]u64 = [_]u64{0} ** 16;
     for (0..8) |i| {
         var carry: u64 = 0;
@@ -93,6 +94,7 @@ fn feMul(a: Fe, b: Fe) Fe {
 }
 
 fn feReduce(t: [16]u64) Fe {
+    @setRuntimeSafety(false);
     var r: [16]u64 = t;
     for (8..16) |i| {
         if (r[i] == 0) continue;
@@ -215,6 +217,7 @@ fn scSub(a: Sc, b: Sc) Sc {
 }
 
 fn scMul(a: Sc, b: Sc) Sc {
+    @setRuntimeSafety(false);
     var t: [16]u64 = [_]u64{0} ** 16;
     for (0..8) |i| {
         var carry: u64 = 0;
@@ -230,6 +233,7 @@ fn scMul(a: Sc, b: Sc) Sc {
 }
 
 fn scReduce(t: [16]u64) Sc {
+    @setRuntimeSafety(false);
     var r: [8]u64 = undefined;
     for (0..8) |i| r[i] = t[i];
     for (8..16) |i| {

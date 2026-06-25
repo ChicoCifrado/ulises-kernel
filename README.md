@@ -94,13 +94,20 @@ zig build bench
 - **Assembly:** Inline asm para x86_64 (`clflushopt`, `prefetcht0`, `rep movsb`, `bsf`) y ARM (`dc cvau`, `prfm`, `clz`)
 - **Cripto:** SHA256, RIPEMD160, secp256k1 — todo en local, sin OpenSSL
 - **Memoria:** Hugepages (2MB/1GB) para slot array, bump allocator para scripts
-- **Agente:** Scheduler cooperativo con tool system, MCP-like IPC
+- **Agente:** Scheduler cooperativo con tool system, MCP-like IPC + [Ulises](ulises/) AI workspace integrado
+- **SMP:** Soporte multiprocesador simétrico vía ACPI MADT + Local APIC + IPI
+- **Sincronización:** Ticket spinlocks (fair), IRQ-safe locks, operaciones atómicas
+- **USB:** Driver teclado USB HID vía UHCI (reemplaza al antiguo PS/2)
+- **PCI:** Enumerador de dispositivos PCI
+- **NIC:** Driver Intel e1000
+- **Shell:** Shell interactiva nativa con 16 comandos, historial, temas
 
-## Inspiración
+## Inspiración y Referencias
 
+- [Ulises](ulises/) — AI workspace integrado como agente del kernel (fork de Odysseus rebrandeado)
+- [Odysseus original](https://github.com/pewdiepie-archdaemon/odysseus) — AI workspace de PewDiePie
 - [bsvz](https://github.com/b-open-io/bsvz) — BSV foundation library para Zig
-- [Odysseus](https://github.com/pewdiepie-archdaemon/odysseus) — AI workspace de PewDiePie
-- [Ulises](https://github.com/ChicoCifrado/ulises) — AI workspace de ChicoCifrado
+- SteamOS GUI reference: [docs/gui-reference-steamos.md](docs/gui-reference-steamos.md)
 
 ## Licencia
 

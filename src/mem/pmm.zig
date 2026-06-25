@@ -12,7 +12,7 @@ pub const PageAllocator = struct {
         const total_pages = total_bytes / page_size;
         const stack_size = total_pages * @sizeOf(usize);
         const stack_base = @as([*]u8, @ptrCast(base))[total_bytes - stack_size ..][0..stack_size];
-        const free_stack: []usize = @ptrCast(stack_base);
+        const free_stack: []usize = @as([]usize, @ptrCast(@alignCast(stack_base)));
 
         const pa = PageAllocator{
             .base = base,

@@ -17,6 +17,13 @@ const overlay = @import("bsv/overlay.zig");
 const secp256k1 = @import("bsv/secp256k1.zig");
 const beef = @import("bsv/beef.zig");
 const x402 = @import("bsv/x402.zig");
+const console_mod = @import("hal/console.zig");
+const usb = @import("hal/usb.zig");
+const pci = @import("hal/pci.zig");
+const e1000 = @import("net/e1000.zig");
+const shell = @import("shell/shell.zig");
+const smp = @import("arch/smp.zig");
+const spinlock = @import("sync/spinlock.zig");
 
 pub const std_options: std.Options = .{
     .log_level = .info,
@@ -32,8 +39,12 @@ pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, addr
 
 pub fn main() noreturn {
     var h = hal.Hal.init();
-
     initPlatform();
+    initBootDevices();
+
+    var page_mem: [1024 * 4096]u8 align(4096) = undefined;
+    var page_allocator = pmm.PageAllocator.init(&page_mem, page_mem.len, 4096);
+    smp.initSmp(&page_allocator);
 
     const UTXO_SLOTS = 1_000_000;
     const SCRIPT_HEAP_SIZE = 64 * 1024 * 1024;
@@ -42,15 +53,17 @@ pub fn main() noreturn {
         h.halt(.panic);
     };
 
-    var agent = initAgent(&utxo, &h);
+    var wallet_engine = brc100.KernelWallet.init(std.heap.page_allocator, &utxo);
+    wallet_engine.setNetwork(.mainnet);
 
-    while (true) {
-        if (agent.pendingCount() > 0) {
-            agent.processN(64);
-            h.dataSync();
-        }
-        h.waitForInterrupt();
-    }
+    _ = initAgent(&h, &wallet_engine);
+
+    var ctx = shell.ShellContext{};
+    var con = console_mod.Console.init();
+    con.clear();
+    shell.run(&ctx, &con, &wallet_engine);
+
+    h.halt(.shutdown);
 }
 
 fn initPlatform() void {
@@ -64,16 +77,19 @@ fn initPlatform() void {
     }
 }
 
+fn initBootDevices() void {
+    if (builtin.target.cpu.arch == .x86_64) {
+        usb.init();
+    }
+}
+
 fn initUtxoStack(num_slots: usize, script_heap_size: usize) !utxo_stack.UtxoStack {
     const allocator = std.heap.page_allocator;
     return try utxo_stack.UtxoStack.init(allocator, num_slots, script_heap_size);
 }
 
-fn initAgent(utxo: *utxo_stack.UtxoStack, h: *hal.Hal) scheduler.AgentScheduler {
+fn initAgent(h: *hal.Hal, wallet_engine: *brc100.KernelWallet) scheduler.AgentScheduler {
     const allocator = std.heap.page_allocator;
-    var wallet_engine = allocator.create(brc100.KernelWallet) catch @panic("OOM");
-    wallet_engine.* = brc100.KernelWallet.init(allocator, utxo);
-    wallet_engine.setNetwork(.mainnet);
 
     var sched = scheduler.AgentScheduler.init(allocator, @as(*anyopaque, @ptrCast(wallet_engine)), @as(*const anyopaque, @ptrCast(h)));
 
