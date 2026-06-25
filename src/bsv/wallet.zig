@@ -155,10 +155,10 @@ test "address matching" {
     var b = builder.ScriptBuilder.init(allocator);
     defer b.deinit();
     try b.buildP2PKH(hash);
-    const script = try b.finish();
-    defer allocator.free(script);
+    const sc = try b.finish();
+    defer allocator.free(sc);
 
-    try std.testing.expect(addr.matchesScript(script));
+    try std.testing.expect(addr.matchesScript(sc));
 }
 
 test "address non-matching" {
@@ -170,10 +170,10 @@ test "address non-matching" {
     var b = builder.ScriptBuilder.init(allocator);
     defer b.deinit();
     try b.buildP2PKH(hash_b);
-    const script = try b.finish();
-    defer allocator.free(script);
+    const sc2 = try b.finish();
+    defer allocator.free(sc2);
 
-    try std.testing.expect(!addr.matchesScript(script));
+    try std.testing.expect(!addr.matchesScript(sc2));
 }
 
 test "wallet balance" {
@@ -187,11 +187,11 @@ test "wallet balance" {
     var b = builder.ScriptBuilder.init(allocator);
     defer b.deinit();
     try b.buildP2PKH(hash);
-    const script = try b.finish();
-    defer allocator.free(script);
+    const sc3 = try b.finish();
+    defer allocator.free(sc3);
 
-    var slot = utxo_slot.Slot.init(hash, 0, 100000, 800000, .{});
-    _ = try stack.insert(slot, script);
+    const slot = utxo_slot.Slot.init(hash, 0, 100000, 800000, .{});
+    _ = try stack.insert(slot, sc3);
 
     var wallet = Wallet.init(allocator, "test", addr);
     defer wallet.deinit();

@@ -137,6 +137,12 @@ fn writeVarInt(writer: anytype, value: usize) void {
     writer.writeAll(buf[0..n]) catch {};
 }
 
+pub fn writeVarIntFull(writer: anytype, value: usize) !void {
+    var buf: [9]u8 = undefined;
+    const n = encodeVarInt(&buf, value);
+    try writer.writeAll(buf[0..n]);
+}
+
 pub fn encodeVarInt(buf: []u8, value: usize) usize {
     if (value < 0xfd) {
         buf[0] = @truncate(value);

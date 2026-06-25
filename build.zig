@@ -21,9 +21,11 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    const test_step = b.step("test", "Run tests");
+    const test_step = b.step("test", "Run all tests");
     const run_test = b.addRunArtifact(test_lib);
     test_step.dependOn(&run_test.step);
+
+
 
     const bench = b.addExecutable(.{
         .name = "utxo-bench",

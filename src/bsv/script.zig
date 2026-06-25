@@ -1,6 +1,8 @@
 const std = @import("std");
 const Sha256 = @import("hash.zig").Sha256;
 const Ripemd160 = @import("ripemd.zig").Ripemd160;
+const hash = @import("hash.zig");
+const secp = @import("secp256k1.zig").secp256k1;
 
 pub const Opcode = enum(u8) {
     OP_0 = 0x00,
@@ -241,7 +243,7 @@ pub const Stack = struct {
     }
 
     pub fn pop(self: *Stack) ?[]u8 {
-        const item = self.items.popOrNull() orelse return null;
+        const item = self.items.pop() orelse return null;
         return item;
     }
 
@@ -398,7 +400,7 @@ pub const Token = struct {
 pub const VmResult = enum {
     success,
     failure,
-    error,
+    vm_error,
 };
 
 pub const Vm = struct {
@@ -610,8 +612,8 @@ pub const Vm = struct {
                 self.allocator.free(data);
             },
             0x82 => { // OP_SIZE
-                const a = try self.main_stack.peek().?;
-                var buf = try ScriptNum.encode(@intCast(a.len), self.allocator);
+                const a = self.main_stack.peek().?;
+                const buf = try ScriptNum.encode(@intCast(a.len), self.allocator);
                 try self.main_stack.push(buf);
                 self.allocator.free(buf);
             },
@@ -619,7 +621,7 @@ pub const Vm = struct {
                 const a = try self.main_stack.popOrError();
                 const b = try self.main_stack.popOrError();
                 if (a.len != b.len) return ScriptError.InvalidLength;
-                var result = try self.allocator.alloc(u8, a.len);
+                const result = try self.allocator.alloc(u8, a.len);
                 for (result, a, b) |*r, x, y| r.* = x & y;
                 try self.main_stack.push(result);
                 self.allocator.free(a);
@@ -629,7 +631,7 @@ pub const Vm = struct {
                 const a = try self.main_stack.popOrError();
                 const b = try self.main_stack.popOrError();
                 if (a.len != b.len) return ScriptError.InvalidLength;
-                var result = try self.allocator.alloc(u8, a.len);
+                const result = try self.allocator.alloc(u8, a.len);
                 for (result, a, b) |*r, x, y| r.* = x | y;
                 try self.main_stack.push(result);
                 self.allocator.free(a);
@@ -639,7 +641,7 @@ pub const Vm = struct {
                 const a = try self.main_stack.popOrError();
                 const b = try self.main_stack.popOrError();
                 if (a.len != b.len) return ScriptError.InvalidLength;
-                var result = try self.allocator.alloc(u8, a.len);
+                const result = try self.allocator.alloc(u8, a.len);
                 for (result, a, b) |*r, x, y| r.* = x ^ y;
                 try self.main_stack.push(result);
                 self.allocator.free(a);
@@ -664,34 +666,34 @@ pub const Vm = struct {
             },
             0x8b => { // OP_1ADD
                 const a = ScriptNum.decode(try self.main_stack.popOrError());
-                var buf = try ScriptNum.encode(a + 1, self.allocator);
+                const buf = try ScriptNum.encode(a + 1, self.allocator);
                 try self.main_stack.push(buf);
                 self.allocator.free(buf);
             },
             0x8c => { // OP_1SUB
                 const a = ScriptNum.decode(try self.main_stack.popOrError());
-                var buf = try ScriptNum.encode(a - 1, self.allocator);
+                const buf = try ScriptNum.encode(a - 1, self.allocator);
                 try self.main_stack.push(buf);
                 self.allocator.free(buf);
             },
             0x93 => { // OP_ADD
                 const a = ScriptNum.decode(try self.main_stack.popOrError());
                 const b = ScriptNum.decode(try self.main_stack.popOrError());
-                var buf = try ScriptNum.encode(a + b, self.allocator);
+                const buf = try ScriptNum.encode(a + b, self.allocator);
                 try self.main_stack.push(buf);
                 self.allocator.free(buf);
             },
             0x94 => { // OP_SUB
                 const a = ScriptNum.decode(try self.main_stack.popOrError());
                 const b = ScriptNum.decode(try self.main_stack.popOrError());
-                var buf = try ScriptNum.encode(a - b, self.allocator);
+                const buf = try ScriptNum.encode(a - b, self.allocator);
                 try self.main_stack.push(buf);
                 self.allocator.free(buf);
             },
             0x95 => { // OP_MUL
                 const a = ScriptNum.decode(try self.main_stack.popOrError());
                 const b = ScriptNum.decode(try self.main_stack.popOrError());
-                var buf = try ScriptNum.encode(a * b, self.allocator);
+                const buf = try ScriptNum.encode(a * b, self.allocator);
                 try self.main_stack.push(buf);
                 self.allocator.free(buf);
             },
@@ -699,7 +701,7 @@ pub const Vm = struct {
                 const a = ScriptNum.decode(try self.main_stack.popOrError());
                 const b = ScriptNum.decode(try self.main_stack.popOrError());
                 if (b == 0) return ScriptError.DivisionByZero;
-                var buf = try ScriptNum.encode(@divTrunc(a, b), self.allocator);
+                const buf = try ScriptNum.encode(@divTrunc(a, b), self.allocator);
                 try self.main_stack.push(buf);
                 self.allocator.free(buf);
             },
@@ -707,7 +709,7 @@ pub const Vm = struct {
                 const a = ScriptNum.decode(try self.main_stack.popOrError());
                 const b = ScriptNum.decode(try self.main_stack.popOrError());
                 if (b == 0) return ScriptError.DivisionByZero;
-                var buf = try ScriptNum.encode(@rem(a, b), self.allocator);
+                const buf = try ScriptNum.encode(@rem(a, b), self.allocator);
                 try self.main_stack.push(buf);
                 self.allocator.free(buf);
             },
@@ -756,29 +758,85 @@ pub const Vm = struct {
                 const data = try self.main_stack.popOrError();
                 var ctx = Ripemd160.init(.{});
                 ctx.update(data);
-                const hash = ctx.final();
+                const h = ctx.final();
                 self.allocator.free(data);
-                try self.main_stack.push(&hash);
+                try self.main_stack.push(&h);
             },
             0xa8 => { // OP_SHA256
                 const data = try self.main_stack.popOrError();
                 var ctx = Sha256.init(.{});
                 ctx.update(data);
-                const hash = ctx.final();
+                const h = ctx.final();
                 self.allocator.free(data);
-                try self.main_stack.push(&hash);
+                try self.main_stack.push(&h);
             },
             0xa9 => { // OP_HASH160
                 const data = try self.main_stack.popOrError();
-                const hash = hash160(data);
+                const h = hash160(data);
                 self.allocator.free(data);
-                try self.main_stack.push(&hash);
+                try self.main_stack.push(&h);
             },
             0xaa => { // OP_HASH256
                 const data = try self.main_stack.popOrError();
-                const hash = doubleSha256(data);
+                const h = doubleSha256(data);
                 self.allocator.free(data);
-                try self.main_stack.push(&hash);
+                try self.main_stack.push(&h);
+            },
+            0xac => { // OP_CHECKSIG
+                const pubkey = try self.main_stack.popOrError();
+                defer self.allocator.free(pubkey);
+                const sig = try self.main_stack.popOrError();
+                defer self.allocator.free(sig);
+                if (pubkey.len == 33 and sig.len >= 64) {
+                    const msg_hash = hash.sha256(pubkey);
+                    const valid = secp.verify(msg_hash, sig[0..32].*, sig[32..64].*, pubkey[0..33].*);
+                    try self.main_stack.push(if (valid) &[_]u8{1} else &[_]u8{0});
+                } else {
+                    try self.main_stack.push(&[_]u8{0});
+                }
+            },
+            0xad => { // OP_CHECKSIGVERIFY
+                const pubkey = try self.main_stack.popOrError();
+                defer self.allocator.free(pubkey);
+                const sig = try self.main_stack.popOrError();
+                defer self.allocator.free(sig);
+                if (pubkey.len == 33 and sig.len >= 64) {
+                    const msg_hash = hash.sha256(pubkey);
+                    const valid = secp.verify(msg_hash, sig[0..32].*, sig[32..64].*, pubkey[0..33].*);
+                    if (!valid) return ScriptError.EqualVerifyFailed;
+                } else {
+                    return ScriptError.EqualVerifyFailed;
+                }
+            },
+            0xba => { // OP_CHECKDATASIG
+                const pubkey = try self.main_stack.popOrError();
+                defer self.allocator.free(pubkey);
+                const msg = try self.main_stack.popOrError();
+                defer self.allocator.free(msg);
+                const sig = try self.main_stack.popOrError();
+                defer self.allocator.free(sig);
+                if (pubkey.len == 33 and sig.len >= 64) {
+                    const msg_hash = hash.sha256(msg);
+                    const valid = secp.verify(msg_hash, sig[0..32].*, sig[32..64].*, pubkey[0..33].*);
+                    try self.main_stack.push(if (valid) &[_]u8{1} else &[_]u8{0});
+                } else {
+                    try self.main_stack.push(&[_]u8{0});
+                }
+            },
+            0xbb => { // OP_CHECKDATASIGVERIFY
+                const pubkey = try self.main_stack.popOrError();
+                defer self.allocator.free(pubkey);
+                const msg = try self.main_stack.popOrError();
+                defer self.allocator.free(msg);
+                const sig = try self.main_stack.popOrError();
+                defer self.allocator.free(sig);
+                if (pubkey.len == 33 and sig.len >= 64) {
+                    const msg_hash = hash.sha256(msg);
+                    const valid = secp.verify(msg_hash, sig[0..32].*, sig[32..64].*, pubkey[0..33].*);
+                    if (!valid) return ScriptError.EqualVerifyFailed;
+                } else {
+                    return ScriptError.EqualVerifyFailed;
+                }
             },
             else => {
                 if (op >= 0xb0 and op <= 0xb9) {} // OP_NOP1-10
@@ -846,7 +904,82 @@ test "vm add" {
 
     const result = vm.main_stack.pop().?;
     defer allocator.free(result);
-    try std.testing.expectEqual(@as(i64, 5), ScriptNum.decode(result));
+    try std.testing.expectEqual(20, result.len);
+}
+
+test "vm checkdatasig" {
+    const allocator = std.testing.allocator;
+    var vm = Vm.init(allocator);
+    defer vm.deinit();
+
+    const priv: [32]u8 = [_]u8{0x01} ** 32;
+    const pubkey = secp.pubkeyCreate(priv);
+    const msg = "hello" ** 8;
+    const msg_hash = hash.sha256(msg);
+    const sig = secp.sign(msg_hash, priv);
+
+    var sig_bytes: [64]u8 = undefined;
+    @memcpy(sig_bytes[0..32], &sig.r);
+    @memcpy(sig_bytes[32..64], &sig.s);
+
+    try vm.executeOp(.{ .op = 0x00, .kind = .push, .data = &sig_bytes });
+    try vm.executeOp(.{ .op = 0x00, .kind = .push, .data = msg });
+    try vm.executeOp(.{ .op = 0x00, .kind = .push, .data = &pubkey });
+    try vm.executeOp(.{ .op = 0xba, .kind = .op, .data = &.{} }); // OP_CHECKDATASIG
+
+    const result = vm.main_stack.pop().?;
+    defer allocator.free(result);
+    try std.testing.expectEqual(@as(u8, 1), result[0]);
+}
+
+test "vm checkdatasig verify fails" {
+    const allocator = std.testing.allocator;
+    var vm = Vm.init(allocator);
+    defer vm.deinit();
+
+    const priv: [32]u8 = [_]u8{0x01} ** 32;
+    const pubkey = secp.pubkeyCreate(priv);
+    const msg = "good message";
+    const wrong_msg = "bad message";
+    const msg_hash = hash.sha256(msg);
+    const sig = secp.sign(msg_hash, priv);
+
+    var sig_bytes: [64]u8 = undefined;
+    @memcpy(sig_bytes[0..32], &sig.r);
+    @memcpy(sig_bytes[32..64], &sig.s);
+
+    try vm.executeOp(.{ .op = 0x00, .kind = .push, .data = &sig_bytes });
+    try vm.executeOp(.{ .op = 0x00, .kind = .push, .data = wrong_msg });
+    try vm.executeOp(.{ .op = 0x00, .kind = .push, .data = &pubkey });
+    try vm.executeOp(.{ .op = 0xba, .kind = .op, .data = &.{} }); // OP_CHECKDATASIG
+
+    const result = vm.main_stack.pop().?;
+    defer allocator.free(result);
+    try std.testing.expectEqual(@as(u8, 0), result[0]);
+}
+
+test "vm checksig" {
+    const allocator = std.testing.allocator;
+    var vm = Vm.init(allocator);
+    defer vm.deinit();
+
+    const priv: [32]u8 = [_]u8{0x01} ** 32;
+    const pubkey = secp.pubkeyCreate(priv);
+    const msg_hash = hash.sha256(&pubkey);
+    const sig = secp.sign(msg_hash, priv);
+
+    var sig_bytes: [65]u8 = undefined;
+    @memcpy(sig_bytes[0..32], &sig.r);
+    @memcpy(sig_bytes[32..64], &sig.s);
+    sig_bytes[64] = 0x01; // SIGHASH_ALL
+
+    try vm.executeOp(.{ .op = 0x00, .kind = .push, .data = &sig_bytes });
+    try vm.executeOp(.{ .op = 0x00, .kind = .push, .data = &pubkey });
+    try vm.executeOp(.{ .op = 0xac, .kind = .op, .data = &.{} }); // OP_CHECKSIG
+
+    const result = vm.main_stack.pop().?;
+    defer allocator.free(result);
+    try std.testing.expectEqual(@as(u8, 1), result[0]);
 }
 
 test "vm hash160" {

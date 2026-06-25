@@ -9,6 +9,14 @@ const pmm = @import("mem/pmm.zig");
 const primitives = @import("bsv/primitives.zig");
 const bsv_hash = @import("bsv/hash.zig");
 const scheduler = @import("agent/scheduler.zig");
+const bkds = @import("bsv/bkds.zig");
+const brc43 = @import("bsv/brc43.zig");
+const brc100 = @import("bsv/brc100.zig");
+const basm = @import("bsv/basm.zig");
+const overlay = @import("bsv/overlay.zig");
+const secp256k1 = @import("bsv/secp256k1.zig");
+const beef = @import("bsv/beef.zig");
+const x402 = @import("bsv/x402.zig");
 
 pub const std_options: std.Options = .{
     .log_level = .info,
@@ -61,15 +69,23 @@ fn initUtxoStack(num_slots: usize, script_heap_size: usize) !utxo_stack.UtxoStac
     return try utxo_stack.UtxoStack.init(allocator, num_slots, script_heap_size);
 }
 
-fn initAgent(_: *utxo_stack.UtxoStack, h: *hal.Hal) scheduler.AgentScheduler {
+fn initAgent(utxo: *utxo_stack.UtxoStack, h: *hal.Hal) scheduler.AgentScheduler {
     const allocator = std.heap.page_allocator;
-    var sched = scheduler.AgentScheduler.init(allocator, @as(*anyopaque, @ptrCast(h)), @as(*const anyopaque, @ptrCast(h)));
+    var wallet_engine = allocator.create(brc100.KernelWallet) catch @panic("OOM");
+    wallet_engine.* = brc100.KernelWallet.init(allocator, utxo);
+    wallet_engine.setNetwork(.mainnet);
+
+    var sched = scheduler.AgentScheduler.init(allocator, @as(*anyopaque, @ptrCast(wallet_engine)), @as(*const anyopaque, @ptrCast(h)));
 
     sched.registerTool(allocator, "balance", .{
         .name = "balance",
         .handler = struct {
-            fn f(_: *anyopaque, _: []const u8) []const u8 {
-                return "0";
+            fn f(ctx: *anyopaque, args: []const u8) []const u8 {
+                _ = args;
+                const kw: *brc100.KernelWallet = @ptrCast(@alignCast(ctx));
+                const bal = kw.getBasketBalance(null) catch return "error";
+                const result = std.fmt.allocPrint(kw.allocator, "{}", .{bal.satoshis}) catch return "error";
+                return result;
             }
         }.f,
     }) catch {};
@@ -79,6 +95,43 @@ fn initAgent(_: *utxo_stack.UtxoStack, h: *hal.Hal) scheduler.AgentScheduler {
         .handler = struct {
             fn f(_: *anyopaque, _: []const u8) []const u8 {
                 return "ok";
+            }
+        }.f,
+    }) catch {};
+
+    sched.registerTool(allocator, "version", .{
+        .name = "version",
+        .handler = struct {
+            fn f(ctx: *anyopaque, _: []const u8) []const u8 {
+                const kw: *brc100.KernelWallet = @ptrCast(@alignCast(ctx));
+                const ver = kw.getVersion();
+                const result = std.fmt.allocPrint(kw.allocator, "{}.{}.{}", .{ ver.major, ver.minor, ver.revision }) catch return "0.0.0";
+                return result;
+            }
+        }.f,
+    }) catch {};
+
+    sched.registerTool(allocator, "network", .{
+        .name = "network",
+        .handler = struct {
+            fn f(ctx: *anyopaque, _: []const u8) []const u8 {
+                const kw: *brc100.KernelWallet = @ptrCast(@alignCast(ctx));
+                return switch (kw.network) {
+                    .mainnet => "mainnet",
+                    .testnet => "testnet",
+                    .regtest => "regtest",
+                };
+            }
+        }.f,
+    }) catch {};
+
+    sched.registerTool(allocator, "height", .{
+        .name = "height",
+        .handler = struct {
+            fn f(ctx: *anyopaque, _: []const u8) []const u8 {
+                const kw: *brc100.KernelWallet = @ptrCast(@alignCast(ctx));
+                const result = std.fmt.allocPrint(kw.allocator, "{}", .{kw.getHeight()}) catch return "0";
+                return result;
             }
         }.f,
     }) catch {};
