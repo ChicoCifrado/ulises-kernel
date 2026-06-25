@@ -1,0 +1,13 @@
+.{
+    .name = .odysseus_kernel,
+    .version = "0.1.0",
+    .fingerprint = 0xcbc9e9baa02c9678,
+    .minimum_zig_version = "0.14.0",
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "include",
+    },
+    .dependencies = .{},
+}

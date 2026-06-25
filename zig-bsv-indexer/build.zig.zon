@@ -1,0 +1,10 @@
+{
+  .name = "bsv-indexer",
+  .version = "0.1.0",
+  .dependencies = .{
+    .secp256k1 = .{
+      .url = "https://github.com/ziglibs/zig-secp256k1/archive/refs/tags/v0.2.0.tar.gz",
+      .hash = "9j1k8v7w6x5y4z3a2b1c0d9e8f7g6h5i4j3k2l1m0n",
+    },
+  },
+}
