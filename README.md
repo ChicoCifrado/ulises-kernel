@@ -105,7 +105,7 @@ zig build bench
 ## Inspiración y Referencias
 
 - [Ulises](ulises/) — AI workspace integrado como agente del kernel (fork de Ulises rebrandeado)
-- [Odysseus original](https://github.com/pewdiepie-archdaemon/odysseus) — AI workspace de PewDiePie
+- [Ulises](https://github.com/ChicoCifrado/ulises) — fork propio del kernel
 - [bsvz](https://github.com/b-open-io/bsvz) — BSV foundation library para Zig
 - SteamOS GUI reference: [docs/gui-reference-steamos.md](docs/gui-reference-steamos.md)
 
