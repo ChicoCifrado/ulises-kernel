@@ -190,7 +190,8 @@ test "wallet balance" {
     const sc3 = try b.finish();
     defer allocator.free(sc3);
 
-    const slot = utxo_slot.Slot.init(hash, 0, 100000, 800000, .{});
+    const txid = [_]u8{0xAA} ** 32;
+    const slot = utxo_slot.Slot.init(txid, 0, 100000, 800000, .{});
     _ = try stack.insert(slot, sc3);
 
     var wallet = Wallet.init(allocator, "test", addr);

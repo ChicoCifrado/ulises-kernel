@@ -4,6 +4,7 @@ const ps2 = @import("../hal/usb.zig");
 const brc100 = @import("../bsv/brc100.zig");
 const hash = @import("../bsv/hash.zig");
 const primitives = @import("../bsv/primitives.zig");
+const global_alloc = @import("../mem/global.zig");
 
 const MAX_HISTORY = 64;
 const MAX_LINE = 256;
@@ -24,7 +25,7 @@ pub const ShellContext = struct {
     running: bool = true,
 
     pub fn addToHistory(self: *ShellContext, line: []const u8) void {
-        const allocator = std.heap.page_allocator;
+        const allocator = global_alloc.get();
         if (self.history_count < MAX_HISTORY) {
             self.history[self.history_count] = allocator.dupe(u8, line) catch return;
             self.history_count += 1;

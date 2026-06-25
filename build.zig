@@ -4,6 +4,8 @@ pub fn build(b: *std.Build) void {
     const optimize = b.standardOptimizeOption(.{});
     const target = b.standardTargetOptions(.{});
 
+    // --- Kernel executable ---
+
     const kernel = b.addExecutable(.{
         .name = "odysseus",
         .root_source_file = b.path("src/kernel.zig"),
@@ -13,7 +15,14 @@ pub fn build(b: *std.Build) void {
 
     kernel.entry = .disabled;
 
+    if (target.result.cpu.arch == .x86_64 and target.result.os.tag == .freestanding) {
+        kernel.setLinkerScript(b.path("src/arch/x86_64/link.ld"));
+        kernel.root_module.code_model = .kernel;
+    }
+
     b.installArtifact(kernel);
+
+    // --- Tests ---
 
     const test_lib = b.addTest(.{
         .root_source_file = b.path("src/kernel.zig"),
@@ -25,7 +34,7 @@ pub fn build(b: *std.Build) void {
     const run_test = b.addRunArtifact(test_lib);
     test_step.dependOn(&run_test.step);
 
-
+    // --- UTXO benchmark ---
 
     const bench = b.addExecutable(.{
         .name = "utxo-bench",

@@ -1,6 +1,7 @@
 const std = @import("std");
 const Sha256 = @import("hash.zig").Sha256;
 const hash = @import("hash.zig");
+const global_alloc = @import("../mem/global.zig");
 
 pub const BasmError = error{
     TreeFull,
@@ -92,7 +93,7 @@ fn pathForKey(key: u64, depth: usize) u64 {
         const index = pathForKey(key, tree_depth) >> (64 - tree_depth);
         const leaf = self.nodes.get(index) orelse return error.NodeNotFound;
 
-        var siblings = try std.ArrayList([32]u8).initCapacity(std.heap.page_allocator, tree_depth);
+        var siblings = try std.ArrayList([32]u8).initCapacity(global_alloc.get(), tree_depth);
         var d: usize = 0;
         while (d < tree_depth) : (d += 1) {
             const sibling_bit = (index >> d) & 1;

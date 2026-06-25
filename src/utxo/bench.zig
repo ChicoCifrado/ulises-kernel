@@ -1,11 +1,10 @@
 const std = @import("std");
 const UtxoStack = @import("stack.zig").UtxoStack;
 const Slot = @import("slot.zig").Slot;
+const global_alloc = @import("../mem/global.zig");
 
 pub fn main() !void {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    defer arena.deinit();
-    const allocator = arena.allocator();
+    const allocator = global_alloc.get();
 
     const stdout = std.io.getStdOut().writer();
     try stdout.print("UTXO Stack Benchmark\n", .{});

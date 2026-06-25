@@ -4,7 +4,6 @@ const hal = @import("hal.zig");
 const x86_64 = @import("arch/x86_64.zig");
 const utxo_stack = @import("utxo/stack.zig");
 const utxo_slot = @import("utxo/slot.zig");
-const arena = @import("mem/arena.zig");
 const pmm = @import("mem/pmm.zig");
 const primitives = @import("bsv/primitives.zig");
 const bsv_hash = @import("bsv/hash.zig");
@@ -24,9 +23,20 @@ const e1000 = @import("net/e1000.zig");
 const shell = @import("shell/shell.zig");
 const smp = @import("arch/smp.zig");
 const spinlock = @import("sync/spinlock.zig");
+const global_alloc = @import("mem/global.zig");
+
+comptime {
+    if (builtin.target.cpu.arch == .x86_64 and
+        builtin.target.os.tag == .freestanding and
+        !builtin.is_test)
+    {
+        _ = @import("arch/x86_64/boot.zig");
+    }
+}
 
 pub const std_options: std.Options = .{
     .log_level = .info,
+    .page_size_max = 4096,
 };
 
 pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, addr: ?usize) noreturn {
@@ -37,7 +47,7 @@ pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, addr
     h.halt(.panic);
 }
 
-pub fn main() noreturn {
+pub export fn kmain() noreturn {
     var h = hal.Hal.init();
     initPlatform();
     initBootDevices();
@@ -46,14 +56,21 @@ pub fn main() noreturn {
     var page_allocator = pmm.PageAllocator.init(&page_mem, page_mem.len, 4096);
     smp.initSmp(&page_allocator);
 
-    const UTXO_SLOTS = 1_000_000;
-    const SCRIPT_HEAP_SIZE = 64 * 1024 * 1024;
+    if (builtin.target.os.tag == .freestanding) {
+        global_alloc.init(&page_allocator, 1024 * 1024) catch {
+            h.halt(.panic);
+        };
+    }
+
+    const UTXO_SLOTS = 1000;
+    const SCRIPT_HEAP_SIZE = 64 * 1024;
 
     var utxo = initUtxoStack(UTXO_SLOTS, SCRIPT_HEAP_SIZE) catch {
         h.halt(.panic);
     };
 
-    var wallet_engine = brc100.KernelWallet.init(std.heap.page_allocator, &utxo);
+    const kernel_alloc = global_alloc.get();
+    var wallet_engine = brc100.KernelWallet.init(kernel_alloc, &utxo);
     wallet_engine.setNetwork(.mainnet);
 
     _ = initAgent(&h, &wallet_engine);
@@ -84,12 +101,12 @@ fn initBootDevices() void {
 }
 
 fn initUtxoStack(num_slots: usize, script_heap_size: usize) !utxo_stack.UtxoStack {
-    const allocator = std.heap.page_allocator;
+    const allocator = global_alloc.get();
     return try utxo_stack.UtxoStack.init(allocator, num_slots, script_heap_size);
 }
 
 fn initAgent(h: *hal.Hal, wallet_engine: *brc100.KernelWallet) scheduler.AgentScheduler {
-    const allocator = std.heap.page_allocator;
+    const allocator = global_alloc.get();
 
     var sched = scheduler.AgentScheduler.init(allocator, @as(*anyopaque, @ptrCast(wallet_engine)), @as(*const anyopaque, @ptrCast(h)));
 

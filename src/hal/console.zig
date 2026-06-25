@@ -1,5 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const global_alloc = @import("../mem/global.zig");
 const usb = @import("usb.zig");
 
 const VGA_WIDTH = 80;
@@ -74,8 +75,9 @@ pub const Console = struct {
     }
 
     pub fn writeFmt(self: *Console, comptime fmt: []const u8, args: anytype) void {
-        const buf = std.fmt.allocPrint(std.heap.page_allocator, fmt, args) catch return;
-        defer std.heap.page_allocator.free(buf);
+        const alloc = global_alloc.get();
+        const buf = std.fmt.allocPrint(alloc, fmt, args) catch return;
+        defer alloc.free(buf);
         self.write(buf);
     }
 

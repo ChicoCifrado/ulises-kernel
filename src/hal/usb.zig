@@ -1,6 +1,7 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const pci = @import("pci.zig");
+const global_alloc = @import("../mem/global.zig");
 
 const UHCI_FRAMELIST_SIZE = 1024;
 const UHCI_TD_ALIGN = 16;
@@ -242,8 +243,9 @@ fn uhciWriteReg32(reg: u16, val: u32) void {
 fn uhciPciInit() bool {
     if (builtin.target.cpu.arch != .x86_64) return false;
 
-    const devs = pci.enumerate(std.heap.page_allocator) catch return false;
-    defer std.heap.page_allocator.free(devs);
+    const alloc = global_alloc.get();
+    const devs = pci.enumerate(alloc) catch return false;
+    defer alloc.free(devs);
 
     for (devs) |d| {
         if (d.class_code == 0x0C and d.subclass == 0x03 and d.prog_if == 0x00) {

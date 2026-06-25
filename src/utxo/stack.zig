@@ -13,6 +13,7 @@ pub const Error = error{
 
 pub const UtxoStack = struct {
     slots: [*]Slot,
+    slot_alloc: []u8,
     capacity: usize,
     count: usize,
     bitmap: Bitmap,
@@ -35,6 +36,7 @@ pub const UtxoStack = struct {
 
         return .{
             .slots = @ptrCast(slot_mem.ptr),
+            .slot_alloc = slot_mem,
             .capacity = num_slots,
             .count = 0,
             .bitmap = Bitmap.init(bitmap_mem),
@@ -46,14 +48,14 @@ pub const UtxoStack = struct {
     }
 
     pub fn deinit(self: *UtxoStack) void {
-        const slot_bytes = self.capacity * @sizeOf(Slot);
-        self.allocator.free(@as([*]u8, @ptrCast(self.slots))[0..slot_bytes]);
+        self.allocator.free(self.slot_alloc);
         self.allocator.free(self.bitmap_words);
         self.allocator.free(self.script_heap);
     }
 
     pub fn insert(self: *UtxoStack, slot: Slot, script: []const u8) !usize {
         const idx = self.bitmap.findFree() orelse return Error.OutOfSlots;
+        if (idx >= self.capacity) return Error.OutOfSlots;
 
         const script_off = self.pushScript(script) catch return Error.ScriptHeapFull;
 
@@ -243,8 +245,8 @@ test "out of slots" {
     defer stack.deinit();
 
     const txid = [_]u8{0xEE} ** 32;
-    try stack.insert(Slot.init(txid, 0, 1, 1, .{}), &.{});
-    try stack.insert(Slot.init(txid, 1, 2, 1, .{}), &.{});
+    _ = try stack.insert(Slot.init(txid, 0, 1, 1, .{}), &.{});
+    _ = try stack.insert(Slot.init(txid, 1, 2, 1, .{}), &.{});
     try std.testing.expectError(Error.OutOfSlots, stack.insert(Slot.init(txid, 2, 3, 1, .{}), &.{}));
 }
 

@@ -87,7 +87,7 @@ test "hal init" {
 }
 
 test "cycle counter" {
-    const h = Hal.init();
+    var h = Hal.init();
     const a = h.readCycleCounter();
     try std.testing.expect(a > 0);
 }

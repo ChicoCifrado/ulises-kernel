@@ -303,14 +303,11 @@ fn gejFromGe(p: Ge) Gej {
 }
 
 fn geFromBytes(b: [33]u8) ?Ge {
-    if (b.len == 33) {
-        const prefix = b[0];
-        if (prefix != 0x02 and prefix != 0x03) return null;
-        const x = feFromBytes(b[1..33].*);
-        const y = geRecoverY(x, prefix == 0x03);
-        return y orelse null;
-    }
-    return null;
+    const prefix = b[0];
+    if (prefix != 0x02 and prefix != 0x03) return null;
+    const x = feFromBytes(b[1..33].*);
+    const y = geRecoverY(x, prefix == 0x03) orelse return null;
+    return Ge{ .x = x, .y = y, .infinity = false };
 }
 
 fn geToBytes(p: Ge) [33]u8 {

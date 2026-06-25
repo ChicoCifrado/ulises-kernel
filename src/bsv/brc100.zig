@@ -210,7 +210,7 @@ pub const KernelWallet = struct {
             offset += script_len.value;
 
             const slot = utxo_slot.Slot.init(txid, @as(u32, @intCast(i)), value, self.height, .{});
-            self.utxo.insert(slot, script) catch continue;
+            _ = self.utxo.insert(slot, script) catch continue;
             utxo_count += 1;
         }
 
@@ -306,18 +306,19 @@ pub const KernelWallet = struct {
     }
 
     pub fn createActionSimple(self: *KernelWallet, destination_script: []const u8, amount: u64) !ActionResponse {
-        const outputs = [_]OutputTemplate{
+        var outputs = [_]OutputTemplate{
             .{
                 .locking_script = destination_script,
                 .value = amount,
             },
         };
-        return self.createAction(&outputs, null);
+        return self.createAction(outputs[0..], null);
     }
 
     pub fn signHash(self: *KernelWallet, hash32: [32]u8, priv: [32]u8) struct { r: [32]u8, s: [32]u8 } {
         _ = self;
-        return secp.sign(hash32, priv);
+        const sig = secp.sign(hash32, priv);
+        return .{ .r = sig.r, .s = sig.s };
     }
 
     pub fn getPubkey(self: *KernelWallet, priv: [32]u8) [33]u8 {
@@ -379,7 +380,7 @@ test "kernel wallet create wallet and balance" {
     const pubkey_hash = [_]u8{0xAA} ** 20;
     try kw.createWallet("default", pubkey_hash);
     kw.setActiveWallet("default");
-    try kw.getBasketBalance(null);
+    _ = try kw.getBasketBalance(null);
 }
 
 test "kernel wallet internalize tx" {

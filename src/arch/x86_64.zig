@@ -1,4 +1,4 @@
-const std = @import("builtin");
+const std = @import("std");
 
 pub fn sti() void {
     asm volatile ("sti");
