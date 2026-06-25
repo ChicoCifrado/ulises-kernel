@@ -39,15 +39,17 @@ pub const std_options: std.Options = .{
     .page_size_max = 4096,
 };
 
-pub fn panic(msg: []const u8, error_return_trace: ?*std.builtin.StackTrace, addr: ?usize) noreturn {
-    _ = msg;
-    _ = error_return_trace;
-    _ = addr;
+pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
+    if (builtin.target.os.tag == .freestanding and builtin.target.cpu.arch == .x86_64 and !builtin.is_test) {
+        const logger = @import("hal/logger.zig");
+        logger.panicLog(msg);
+    }
     var h = hal.Hal.init();
     h.halt(.panic);
 }
 
 pub export fn kmain() noreturn {
+    initLogger();
     var h = hal.Hal.init();
     initPlatform();
     initInterrupts();
@@ -59,6 +61,10 @@ pub export fn kmain() noreturn {
 
     if (builtin.target.os.tag == .freestanding) {
         global_alloc.init(&page_allocator, 1024 * 1024) catch {
+            if (builtin.target.cpu.arch == .x86_64) {
+                const log = @import("hal/logger.zig");
+                log.errorLog("global_alloc.init failed");
+            }
             h.halt(.panic);
         };
     }
@@ -67,6 +73,10 @@ pub export fn kmain() noreturn {
     const SCRIPT_HEAP_SIZE = 64 * 1024;
 
     var utxo = initUtxoStack(UTXO_SLOTS, SCRIPT_HEAP_SIZE) catch {
+        if (builtin.target.cpu.arch == .x86_64) {
+            const log = @import("hal/logger.zig");
+            log.errorLog("initUtxoStack failed");
+        }
         h.halt(.panic);
     };
 
@@ -82,6 +92,14 @@ pub export fn kmain() noreturn {
     shell.run(&ctx, &con, &wallet_engine);
 
     h.halt(.shutdown);
+}
+
+fn initLogger() void {
+    if (builtin.target.os.tag == .freestanding and builtin.target.cpu.arch == .x86_64 and !builtin.is_test) {
+        const logger = @import("hal/logger.zig");
+        logger.init();
+        logger.write("[KERNEL] Odysseus booting\n");
+    }
 }
 
 fn initPlatform() void {
@@ -124,6 +142,13 @@ fn initUtxoStack(num_slots: usize, script_heap_size: usize) !utxo_stack.UtxoStac
     return try utxo_stack.UtxoStack.init(allocator, num_slots, script_heap_size);
 }
 
+fn logError(msg: []const u8) void {
+    if (builtin.target.cpu.arch == .x86_64 and builtin.target.os.tag == .freestanding and !builtin.is_test) {
+        const log = @import("hal/logger.zig");
+        log.errorLog(msg);
+    }
+}
+
 fn initAgent(h: *hal.Hal, wallet_engine: *brc100.KernelWallet) scheduler.AgentScheduler {
     const allocator = global_alloc.get();
 
@@ -140,7 +165,7 @@ fn initAgent(h: *hal.Hal, wallet_engine: *brc100.KernelWallet) scheduler.AgentSc
                 return result;
             }
         }.f,
-    }) catch {};
+    }) catch logError("registerTool balance failed");
 
     sched.registerTool(allocator, "scan", .{
         .name = "scan",
@@ -149,7 +174,7 @@ fn initAgent(h: *hal.Hal, wallet_engine: *brc100.KernelWallet) scheduler.AgentSc
                 return "ok";
             }
         }.f,
-    }) catch {};
+    }) catch logError("registerTool scan failed");
 
     sched.registerTool(allocator, "version", .{
         .name = "version",
@@ -161,7 +186,7 @@ fn initAgent(h: *hal.Hal, wallet_engine: *brc100.KernelWallet) scheduler.AgentSc
                 return result;
             }
         }.f,
-    }) catch {};
+    }) catch logError("registerTool version failed");
 
     sched.registerTool(allocator, "network", .{
         .name = "network",
@@ -175,7 +200,7 @@ fn initAgent(h: *hal.Hal, wallet_engine: *brc100.KernelWallet) scheduler.AgentSc
                 };
             }
         }.f,
-    }) catch {};
+    }) catch logError("registerTool network failed");
 
     sched.registerTool(allocator, "height", .{
         .name = "height",
@@ -186,7 +211,7 @@ fn initAgent(h: *hal.Hal, wallet_engine: *brc100.KernelWallet) scheduler.AgentSc
                 return result;
             }
         }.f,
-    }) catch {};
+    }) catch logError("registerTool height failed");
 
     return sched;
 }
