@@ -29,7 +29,7 @@ Formato: GPT, 5 particiones (EFI + datos MS + root + var + home)
    - UI en HTML/CSS/JS
    - Overlays: MangoHud, Performance overlay
 
-## Lecciones para el kernel Odysseus
+## Lecciones para el kernel Ulises
 
 - **Display inicial**: Arrancar en modo texto VGA (ya implementado en `console.zig`) y ofrecer conmutación a framebuffer simple (simple framebuffer, efifb o vesafb)
 - **Compositor futuro**: Implementar un mini-compositor Wayland o un simple DRM master que pinte directamente al framebuffer

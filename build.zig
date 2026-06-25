@@ -7,7 +7,7 @@ pub fn build(b: *std.Build) void {
     // --- Kernel executable ---
 
     const kernel = b.addExecutable(.{
-        .name = "odysseus",
+        .name = "ulises",
         .root_source_file = b.path("src/kernel.zig"),
         .target = target,
         .optimize = optimize,

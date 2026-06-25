@@ -1,4 +1,4 @@
-# Odysseus Kernel — BSV Native Unikernel
+# Ulises Kernel — BSV Native Unikernel
 
 **Kernel especializado para Bitcoin SV.** Indexación UTXO en slots fijos con optimizaciones assembly, agente autónomo integrado, y capacidades cripto a nivel kernel. Diseñado para correr desde CPUs x86_64 hasta microcontroladores ESP32.
 
@@ -104,7 +104,7 @@ zig build bench
 
 ## Inspiración y Referencias
 
-- [Ulises](ulises/) — AI workspace integrado como agente del kernel (fork de Odysseus rebrandeado)
+- [Ulises](ulises/) — AI workspace integrado como agente del kernel (fork de Ulises rebrandeado)
 - [Odysseus original](https://github.com/pewdiepie-archdaemon/odysseus) — AI workspace de PewDiePie
 - [bsvz](https://github.com/b-open-io/bsvz) — BSV foundation library para Zig
 - SteamOS GUI reference: [docs/gui-reference-steamos.md](docs/gui-reference-steamos.md)

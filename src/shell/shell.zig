@@ -112,7 +112,7 @@ fn renderPrompt(con: *console.Console, ctx: *ShellContext) void {
     con.setFg(ctx.theme.bracket);
     con.write("[");
     con.setFg(ctx.theme.path);
-    con.write("odysseus");
+    con.write("ulises");
     con.setFg(ctx.theme.bracket);
     con.write("]");
     con.setFg(ctx.theme.symbol);
@@ -126,7 +126,7 @@ fn printBanner(con: *console.Console) void {
     con.setFg(.cyan);
     con.write("\n");
     con.write("  +---------------------------------------+\n");
-    con.write("  |  Odysseus Kernel v1.0.0               |\n");
+    con.write("  |  Ulises Kernel v1.0.0               |\n");
     con.write("  |  BSV Unikernel  BRC Stack             |\n");
     con.write("  +---------------------------------------+\n");
     con.write("\n");
@@ -188,7 +188,7 @@ fn cmdNetwork(_: []const u8, con: *console.Console, ctx: *ShellContext) void {
 }
 
 fn cmdVersion(_: []const u8, con: *console.Console, _: *ShellContext) void {
-    con.write("  Odysseus Kernel v1.0.0  BRC Stack\n");
+    con.write("  Ulises Kernel v1.0.0  BRC Stack\n");
 }
 
 fn cmdUtxos(_: []const u8, con: *console.Console, ctx: *ShellContext) void {
@@ -198,7 +198,7 @@ fn cmdUtxos(_: []const u8, con: *console.Console, ctx: *ShellContext) void {
 
 fn cmdStatus(_: []const u8, con: *console.Console, ctx: *ShellContext) void {
     con.setFg(.cyan);
-    con.write("  Odysseus Kernel  System Status\n");
+    con.write("  Ulises Kernel  System Status\n");
     con.setFg(.light_gray);
     con.writeFmt("  commands in history: {}\n", .{ctx.history_count});
     if (ctx.wallet) |kw| {

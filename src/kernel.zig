@@ -119,7 +119,7 @@ fn initLogger() void {
     if (builtin.target.os.tag == .freestanding and builtin.target.cpu.arch == .x86_64 and !builtin.is_test) {
         const logger = @import("hal/logger.zig");
         logger.init();
-        logger.write("[KERNEL] Odysseus booting\n");
+        logger.write("[KERNEL] Ulises booting\n");
     }
 }
 
@@ -248,6 +248,6 @@ test "kernel integrity" {
 }
 
 test "crypto works" {
-    const hash = bsv_hash.doubleSha256("odysseus");
+    const hash = bsv_hash.doubleSha256("ulises");
     try std.testing.expectEqual(32, hash.len);
 }
