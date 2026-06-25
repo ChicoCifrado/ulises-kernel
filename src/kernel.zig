@@ -37,7 +37,28 @@ comptime {
 pub const std_options: std.Options = .{
     .log_level = .info,
     .page_size_max = 4096,
+    .logFn = logFn,
 };
+
+fn logFn(
+    comptime level: std.log.Level,
+    comptime scope: @TypeOf(.EnumLiteral),
+    comptime format: []const u8,
+    args: anytype,
+) void {
+    if (builtin.target.os.tag == .freestanding and builtin.target.cpu.arch == .x86_64 and !builtin.is_test) {
+        const logger = @import("hal/logger.zig");
+        const tag = @tagName(scope);
+        const alloc = global_alloc.get();
+        const prefix = std.fmt.allocPrint(alloc, "[{s}] [{s}] ", .{ @tagName(level), tag }) catch return;
+        defer alloc.free(prefix);
+        logger.write(prefix);
+        const buf = std.fmt.allocPrint(alloc, format, args) catch return;
+        defer alloc.free(buf);
+        logger.write(buf);
+        logger.write("\n");
+    }
+}
 
 pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
     if (builtin.target.os.tag == .freestanding and builtin.target.cpu.arch == .x86_64 and !builtin.is_test) {
