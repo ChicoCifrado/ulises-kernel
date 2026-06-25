@@ -139,9 +139,13 @@ fn initInterrupts() void {
         const idt_mod = @import("arch/x86_64/idt.zig");
         const timer = @import("arch/x86_64/timer.zig");
         const sched = @import("sched/scheduler.zig");
+        const exc = @import("arch/x86_64/exceptions.zig");
         const Handler = struct {
             fn callback(frame: *const idt_mod.InterruptFrame) callconv(.C) u64 {
                 const vec = frame.vector;
+                if (vec < 32) {
+                    return exc.handler(frame);
+                }
                 if (vec == 0x20) {
                     return sched.onTimerTick(frame);
                 }
