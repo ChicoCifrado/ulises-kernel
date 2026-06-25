@@ -143,6 +143,15 @@ fn parseMadt(madt: [*]const u8, len: usize) void {
                     cpu_count += 1;
                 }
             }
+        } else if (entry_type == 1) {
+            const io_addr = @as(*const u32, @ptrFromInt(@intFromPtr(madt) + off + 4)).*;
+            ioapic_base = @as(u64, io_addr);
+        } else if (entry_type == 2) {
+            const irq = madt[off + 2];
+            const flags = @as(*const u16, @ptrFromInt(@intFromPtr(madt) + off + 4)).*;
+            if (irq == 0) {
+                ioapic_irq_start = flags;
+            }
         }
         off += entry_len;
     }
@@ -461,6 +470,7 @@ pub fn initSmp(page_allocator: *pmm.PageAllocator) void {
 
     parseAcpiTables();
     lapicInit();
+    ioapicInit();
 
     if (cpu_count == 0) {
         cpu_count = 1;
@@ -518,6 +528,76 @@ pub fn waitForAp(cpu_id: u32) bool {
         asm volatile ("pause");
     }
     return false;
+}
+
+// --- IOAPIC ---
+
+const IOAPIC_DEFAULT_BASE = @as(u64, 0xFEC00000);
+var ioapic_base: u64 = IOAPIC_DEFAULT_BASE;
+var ioapic_irq_start: u32 = 0;
+
+fn ioapicReadReg(reg: u32) u32 {
+    @as([*]volatile u32, @ptrFromInt(ioapic_base))[0] = reg;
+    return @as([*]volatile u32, @ptrFromInt(ioapic_base))[4];
+}
+
+fn ioapicWriteReg(reg: u32, val: u32) void {
+    @as([*]volatile u32, @ptrFromInt(ioapic_base))[0] = reg;
+    @as([*]volatile u32, @ptrFromInt(ioapic_base))[4] = val;
+}
+
+fn ioapicInit() void {
+    const ver = ioapicReadReg(0x01);
+    const max_redirs = (ver >> 16) & 0xFF;
+
+    _ = ioapicReadReg(0x00);
+
+    for (0..max_redirs) |i| {
+        const low_idx: u32 = @intCast(0x10 + i * 2);
+        const high_idx: u32 = @intCast(0x10 + i * 2 + 1);
+        ioapicWriteReg(low_idx, (1 << 16));
+        ioapicWriteReg(high_idx, 0);
+    }
+}
+
+fn ioapicParseMadt(madt: [*]const u8, len: usize) void {
+    var off: usize = 0x2C;
+    while (off + 1 < len) {
+        const entry_type = madt[off];
+        const entry_len = madt[off + 1];
+        if (entry_len < 2 or off + entry_len > len) break;
+
+        if (entry_type == 1) {
+            const io_addr = @as(*const u32, @ptrFromInt(@intFromPtr(madt) + off + 4)).*;
+            ioapic_base = @as(u64, io_addr);
+        }
+
+        if (entry_type == 2) {
+            const irq = madt[off + 2];
+            const flags = @as(*const u16, @ptrFromInt(@intFromPtr(madt) + off + 4)).*;
+            if (irq == 0) {
+                const pol = (flags >> 1) & 1;
+                const trig = flags & 1;
+                _ = pol;
+                _ = trig;
+            }
+        }
+
+        off += entry_len;
+    }
+}
+
+pub fn ioapicRedirectIrq(irq: u8, vector: u8, apic_id: u32) void {
+    const low_idx: u32 = @intCast(0x10 + @as(u32, irq) * 2);
+    const high_idx: u32 = @intCast(0x10 + @as(u32, irq) * 2 + 1);
+    const low_val: u32 = @as(u32, vector) | (0 << 8) | (0 << 11) | (0 << 13) | (0 << 15) | (0 << 16);
+    const high_val: u32 = apic_id << 24;
+    ioapicWriteReg(low_idx, low_val);
+    ioapicWriteReg(high_idx, high_val);
+}
+
+pub fn getLapicBase() u64 {
+    return lapic_base;
 }
 
 test "smp trampoline generation" {

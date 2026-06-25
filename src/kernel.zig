@@ -98,12 +98,18 @@ fn initPlatform() void {
 fn initInterrupts() void {
     if (builtin.target.cpu.arch == .x86_64 and builtin.target.os.tag == .freestanding and !builtin.is_test) {
         const idt_mod = @import("arch/x86_64/idt.zig");
+        const timer = @import("arch/x86_64/timer.zig");
         const Handler = struct {
             fn callback(frame: *const idt_mod.InterruptFrame) callconv(.C) void {
-                _ = frame;
+                const vec = frame.vector;
+                if (vec == 0x20) {
+                    timer.handler(frame);
+                }
             }
         };
         idt_mod.init(Handler.callback);
+        timer.init(Handler.callback);
+        x86_64.sti();
     }
 }
 
