@@ -22,7 +22,7 @@ fn inl(port: u16) u32 {
     var val: u32 = undefined;
     asm volatile ("inl %[port], %[val]"
         : [val] "={eax}" (val),
-        : [port] "N{dx}" (port),
+        :           [port] "{dx}" (port),
     );
     return val;
 }
@@ -31,7 +31,7 @@ fn outl(port: u16, val: u32) void {
     asm volatile ("outl %[val], %[port]"
         :
         : [val] "{eax}" (val),
-          [port] "N{dx}" (port),
+          [port] "{dx}" (port),
     );
 }
 
@@ -43,6 +43,33 @@ fn pciConfigRead(bus: u8, device: u8, func: u8, offset: u8) u32 {
         (@as(u32, offset) & 0xFC);
     outl(CONFIG_ADDR, addr);
     return inl(CONFIG_DATA);
+}
+
+pub fn mapMmioBars(page_alloc: anytype) void {
+    const x86_64 = @import("../arch/x86_64.zig");
+    for (0..256) |bus| {
+        for (0..32) |dev| {
+            const b: u8 = @truncate(bus);
+            const d: u8 = @truncate(dev);
+            asm volatile ("movb $0x47, %al; movw $0xe9, %dx; outb %al, %dx");
+            const vendor = pciConfigRead(b, d, 0, 0);
+            if (vendor == 0xFFFFFFFF) continue;
+            var bar_offs: u8 = 0x10;
+            while (bar_offs <= 0x24) {
+                const bar = pciConfigRead(b, d, 0, bar_offs);
+                const is_mmio = bar & 1 == 0 and bar != 0;
+                const is_64bit = (bar >> 1) & 0x03 == 2;
+                if (is_mmio) {
+                    const phys = bar & 0xFFFFFFF0;
+                    if (phys >= 0xC0000000) {
+                        x86_64.mapMmioRegion(phys, 4096, page_alloc);
+                    }
+                }
+                bar_offs += 4;
+                if (is_64bit) bar_offs += 4;
+            }
+        }
+    }
 }
 
 pub fn enumerate(allocator: std.mem.Allocator) ![]PciDevice {

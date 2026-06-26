@@ -151,7 +151,7 @@ fn inb(port: u16) u8 {
     var val: u8 = undefined;
     asm volatile ("inb %[port], %[val]"
         : [val] "={al}" (val),
-        : [port] "N{dx}" (port),
+        : [port] "{dx}" (port),
     );
     return val;
 }
@@ -160,7 +160,7 @@ fn outb(port: u16, val: u8) void {
     asm volatile ("outb %[val], %[port]"
         :
         : [val] "{al}" (val),
-          [port] "N{dx}" (port),
+          [port] "{dx}" (port),
     );
 }
 
@@ -168,7 +168,7 @@ fn inw(port: u16) u16 {
     var val: u16 = undefined;
     asm volatile ("inw %[port], %[val]"
         : [val] "={ax}" (val),
-        : [port] "N{dx}" (port),
+        : [port] "{dx}" (port),
     );
     return val;
 }
@@ -177,7 +177,7 @@ fn outw(port: u16, val: u16) void {
     asm volatile ("outw %[val], %[port]"
         :
         : [val] "{ax}" (val),
-          [port] "N{dx}" (port),
+          [port] "{dx}" (port),
     );
 }
 
@@ -185,7 +185,7 @@ fn inl(port: u16) u32 {
     var val: u32 = undefined;
     asm volatile ("inl %[port], %[val]"
         : [val] "={eax}" (val),
-        : [port] "N{dx}" (port),
+        : [port] "{dx}" (port),
     );
     return val;
 }
@@ -194,7 +194,7 @@ fn outl(port: u16, val: u32) void {
     asm volatile ("outl %[val], %[port]"
         :
         : [val] "{eax}" (val),
-          [port] "N{dx}" (port),
+          [port] "{dx}" (port),
     );
 }
 

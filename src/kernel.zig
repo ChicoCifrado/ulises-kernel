@@ -93,41 +93,9 @@ pub export fn kmain() callconv(.Naked) noreturn {
 
 pub export fn kmainReal() noreturn {
     initLogger();
-    // Trace: logger initialized ('L')
-    if (comptime builtin.target.cpu.arch == .x86_64 and builtin.target.os.tag == .freestanding and !builtin.is_test) {
-        asm volatile (
-            \\ movb $0x4C, %al
-            \\ movw $0xe9, %dx
-            \\ outb %al, %dx
-        );
-    }
     var h = hal.Hal.init();
-    // Trace: hal initialized ('H')
-    if (comptime builtin.target.cpu.arch == .x86_64 and builtin.target.os.tag == .freestanding and !builtin.is_test) {
-        asm volatile (
-            \\ movb $0x48, %al
-            \\ movw $0xe9, %dx
-            \\ outb %al, %dx
-        );
-    }
     initPlatform();
-    // Trace: platform initialized ('P')
-    if (comptime builtin.target.cpu.arch == .x86_64 and builtin.target.os.tag == .freestanding and !builtin.is_test) {
-        asm volatile (
-            \\ movb $0x50, %al
-            \\ movw $0xe9, %dx
-            \\ outb %al, %dx
-        );
-    }
     initInterrupts();
-    // Trace: interrupts initialized ('I')
-    if (comptime builtin.target.cpu.arch == .x86_64 and builtin.target.os.tag == .freestanding and !builtin.is_test) {
-        asm volatile (
-            \\ movb $0x49, %al
-            \\ movw $0xe9, %dx
-            \\ outb %al, %dx
-        );
-    }
     var page_allocator = pmm.PageAllocator.init(&page_mem, page_mem.len, 4096);
     smp.initSmp(&page_allocator);
 
@@ -141,8 +109,7 @@ pub export fn kmainReal() noreturn {
         };
     }
 
-    initBootDevices();
-
+    initBootDevices(&page_allocator);
     const UTXO_SLOTS = 1000;
     const SCRIPT_HEAP_SIZE = 64 * 1024;
 
@@ -212,9 +179,13 @@ fn initInterrupts() void {
     }
 }
 
-fn initBootDevices() void {
+fn initBootDevices(page_allocator: *pmm.PageAllocator) void {
     if (builtin.target.cpu.arch == .x86_64) {
+        asm volatile ("movb $0x4D, %al; movw $0xe9, %dx; outb %al, %dx"); // 'M'
+        pci.mapMmioBars(page_allocator);
+        asm volatile ("movb $0x6D, %al; movw $0xe9, %dx; outb %al, %dx"); // 'm'
         usb.init();
+        asm volatile ("movb $0x55, %al; movw $0xe9, %dx; outb %al, %dx"); // 'U'
     }
 }
 

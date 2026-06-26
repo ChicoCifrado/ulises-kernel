@@ -5,10 +5,10 @@ export var mboot_info: u64 linksection(".early.data") = 0;
 
 export var kernel_stack: [32768]u8 align(16) linksection(".early.data") = undefined;
 
-export var pml4: [512]u64 align(4096) linksection(".early.data") = [_]u64{0} ** 512;
+pub export var pml4: [512]u64 align(4096) linksection(".early.data") = [_]u64{0} ** 512;
 export var pdpt: [512]u64 align(4096) linksection(".early.data") = [_]u64{0} ** 512;
 export var pd: [512]u64 align(4096) linksection(".early.data") = [_]u64{0} ** 512;
-export var pd_mmio: [512]u64 align(4096) linksection(".early.data") = [_]u64{0} ** 512;
+pub export var pd_mmio: [512]u64 align(4096) linksection(".early.data") = [_]u64{0} ** 512;
 
 export var boot_gdt: [24]u8 align(8) linksection(".early.data") = [_]u8{0} ** 24;
 export var boot_gdt_desc: [6]u8 linksection(".early.data") = [_]u8{0} ** 6;

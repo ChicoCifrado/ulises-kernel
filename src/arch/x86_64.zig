@@ -97,6 +97,46 @@ pub fn serialReadChar() u8 {
     return inb(0x3F8);
 }
 
+pub fn invlpg(vaddr: u64) void {
+    asm volatile ("invlpg (%[v])" : : [v] "r" (vaddr) : "memory");
+}
+
+/// Map a physical MMIO region at its physical address (identity map)
+/// using the pd_mmio page directory (covers physical 3-4GB).
+/// phys must be in 0xC0000000-0xFFFFFFFF range. 4KB-aligned.
+pub fn mapMmioRegion(phys: u64, size: u64, page_alloc: anytype) void {
+    const boot = @import("x86_64/boot.zig");
+    const pd_phys = @intFromPtr(&boot.pd_mmio) - KERNEL_OFFSET;
+    const pd: [*]volatile u64 = @ptrFromInt(pd_phys);
+
+    var addr = phys;
+    const end = addr + size;
+    while (addr < end) {
+        const pd_idx = (addr - 0xC0000000) / (2 * 1024 * 1024);
+        if (pd_idx >= 512) break;
+        if (addr % (2 * 1024 * 1024) == 0 and addr + (2 * 1024 * 1024) <= end) {
+            pd[pd_idx] = addr | 0x93;
+            addr += 2 * 1024 * 1024;
+        } else {
+            const pt_page = page_alloc.allocPage() orelse return;
+            const pt_phys = virtToPhys(pt_page);
+            const pt_virt: [*]u64 = @ptrFromInt(@intFromPtr(pt_page));
+            @memset(@as([*]u8, @ptrCast(pt_virt))[0..4096], 0);
+            pd[pd_idx] = pt_phys | 0x03;
+            const pt_end = @min(addr + 2 * 1024 * 1024, end);
+            var pt_addr = addr;
+            while (pt_addr < pt_end) {
+                const pt_idx = (pt_addr - addr) / 4096;
+                if (pt_idx >= 512) break;
+                pt_virt[pt_idx] = pt_addr | 0x13;
+                pt_addr += 4096;
+            }
+            addr = pt_end;
+        }
+    }
+    asm volatile ("mov %[cr3], %%cr3" : : [cr3] "r" (@as(u64, @intFromPtr(&boot.pml4)) - KERNEL_OFFSET) : "memory");
+}
+
 pub fn initCpu() void {
     const result = cpuid(1, 0);
     _ = result;
