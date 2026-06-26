@@ -2,6 +2,9 @@ const std = @import("std");
 const builtin = @import("builtin");
 const pci = @import("pci.zig");
 const global_alloc = @import("../mem/global.zig");
+const x86_64 = @import("../arch/x86_64.zig");
+
+const virtToPhys = x86_64.virtToPhys;
 
 const UHCI_FRAMELIST_SIZE = 1024;
 const UHCI_TD_ALIGN = 16;
@@ -270,7 +273,7 @@ fn uhciReset() void {
 
     uhciWriteReg(UHCI_SOF, 0x40);
 
-    uhciWriteReg32(UHCI_FLBASE, @as(u32, @intCast(@intFromPtr(&framelist))));
+    uhciWriteReg32(UHCI_FLBASE, virtToPhys(&framelist));
 
     uhciWriteReg(UHCI_FRNUM, 0);
 
@@ -317,9 +320,9 @@ fn isLowSpeed(port: u8) bool {
 }
 
 fn uhciAsyncSubmit(td: *Td, qh: *Qh) void {
-    qh.head_link = @as(u32, @intCast(@intFromPtr(td))) | 0x0002 | 0x0004;
-    qh.element_link = @as(u32, @intCast(@intFromPtr(td))) | 0x0002;
-    framelist[0] = @as(u32, @intCast(@intFromPtr(qh))) | 0x0002;
+    qh.head_link = virtToPhys(td) | 0x0002 | 0x0004;
+    qh.element_link = virtToPhys(td) | 0x0002;
+    framelist[0] = virtToPhys(qh) | 0x0002;
     delayMs(5);
 }
 
@@ -351,7 +354,7 @@ fn buildTdChain(setup_pkt: *const UsbSetupPacket, data_buf: ?[]u8, direction: u8
         const data = allocTd();
         @memset(@as(*[32]u8, @ptrCast(data)), 0);
         data.link = 0x0001;
-        data.buffer = @as(u32, @intCast(@intFromPtr(buf.ptr)));
+        data.buffer = virtToPhys(buf.ptr);
 
         if (direction == PID_IN) {
             data.token = setupTdToken(PID_IN, dev_addr, endp, TD_TOGGLE_DATA1, @as(u32, @intCast(buf.len)));
@@ -359,7 +362,7 @@ fn buildTdChain(setup_pkt: *const UsbSetupPacket, data_buf: ?[]u8, direction: u8
             data.token = setupTdToken(PID_OUT, dev_addr, endp, TD_TOGGLE_DATA1, @as(u32, @intCast(buf.len)));
         }
 
-        prev.link = @as(u32, @intCast(@intFromPtr(data)));
+        prev.link = virtToPhys(data);
         prev = data;
         data_td = data;
     }
@@ -374,7 +377,7 @@ fn buildTdChain(setup_pkt: *const UsbSetupPacket, data_buf: ?[]u8, direction: u8
     }
     status.token |= TD_TOKEN_IOC;
 
-    prev.link = @as(u32, @intCast(@intFromPtr(status)));
+    prev.link = virtToPhys(status);
 
     return .{ .td_setup = setup, .td_data = data_td, .td_status = status };
 }
@@ -398,10 +401,10 @@ fn controlTransfer(dev_addr: u8, setup: *const UsbSetupPacket, data: ?[]u8, dire
     const chain = buildTdChain(setup, data, direction, dev_addr, 0);
 
     const qh = allocQh();
-    qh.head_link = @as(u32, @intCast(@intFromPtr(chain.td_setup))) | 0x0002 | 0x0004;
-    qh.element_link = @as(u32, @intCast(@intFromPtr(chain.td_setup))) | 0x0002;
+    qh.head_link = virtToPhys(chain.td_setup) | 0x0002 | 0x0004;
+    qh.element_link = virtToPhys(chain.td_setup) | 0x0002;
 
-    framelist[0] = @as(u32, @intCast(@intFromPtr(qh))) | 0x0002;
+    framelist[0] = virtToPhys(qh) | 0x0002;
     delayMs(5);
 
     const ok = waitTdComplete(chain.td_status);
@@ -568,7 +571,7 @@ fn setupInterruptRead() void {
 
     interrupt_td = allocTd();
     @memset(@as(*[32]u8, @ptrCast(interrupt_td)), 0);
-    interrupt_td.buffer = @as(u32, @intCast(@intFromPtr(&report_buf)));
+    interrupt_td.buffer = virtToPhys(&report_buf);
     interrupt_td.link = 0x0001;
     interrupt_td.token = TD_TOKEN_ACTIVE | TD_TOGGLE_DATA0 |
         (@as(u32, keyboard_dev_addr) << 8) |
@@ -577,15 +580,19 @@ fn setupInterruptRead() void {
         (@as(u32, @sizeOf(@TypeOf(report_buf))) & 0x7FF);
 
     interrupt_qh = allocQh();
-    const td_addr = @as(u32, @intCast(@intFromPtr(interrupt_td)));
+    const td_addr = virtToPhys(interrupt_td);
     interrupt_qh.head_link = td_addr | 0x0002 | 0x0004;
     interrupt_qh.element_link = td_addr | 0x0002;
 
     var i: usize = 0;
     while (i < UHCI_FRAMELIST_SIZE) {
-        framelist[i] = @as(u32, @intCast(@intFromPtr(interrupt_qh))) | 0x0002;
+        framelist[i] = virtToPhys(interrupt_qh) | 0x0002;
         i += keyboard_interval;
     }
+}
+
+pub fn isInitialized() bool {
+    return kb_state.initialized;
 }
 
 pub fn init() void {

@@ -1,5 +1,8 @@
 const std = @import("std");
 const builtin = @import("builtin");
+const x86_64 = @import("../arch/x86_64.zig");
+
+const virtToPhys = x86_64.virtToPhys;
 
 const E1000_NUM_RX_DESC = 32;
 const E1000_NUM_TX_DESC = 32;
@@ -68,7 +71,7 @@ pub const E1000 = struct {
             e1000.rx_bufs[i] = try allocator.alloc(u8, 2048);
             @memset(e1000.rx_bufs[i], 0);
             e1000.rx_desc[i] = .{
-                .addr = @intFromPtr(e1000.rx_bufs[i].ptr),
+                .addr = @as(u64, virtToPhys(e1000.rx_bufs[i].ptr)),
                 .length = 0,
                 .checksum = 0,
                 .status = 0,
@@ -80,7 +83,7 @@ pub const E1000 = struct {
             e1000.tx_bufs[i] = try allocator.alloc(u8, 2048);
             @memset(e1000.tx_bufs[i], 0);
             e1000.tx_desc[i] = .{
-                .addr = @intFromPtr(e1000.tx_bufs[i].ptr),
+                .addr = @as(u64, virtToPhys(e1000.tx_bufs[i].ptr)),
                 .length = 0,
                 .cso = 0,
                 .cmd = 0,
@@ -117,14 +120,14 @@ pub const E1000 = struct {
 
         self.writeReg(Regs.TCTRL, 0);
 
-        self.writeReg(Regs.RDBAL, @as(u32, @truncate(@intFromPtr(self.rx_desc.ptr))));
-        self.writeReg(Regs.RDBAH, @as(u32, @truncate(@intFromPtr(self.rx_desc.ptr) >> 32)));
+        self.writeReg(Regs.RDBAL, virtToPhys(self.rx_desc.ptr));
+        self.writeReg(Regs.RDBAH, 0);
         self.writeReg(Regs.RDLEN, E1000_NUM_RX_DESC * @sizeOf(RxDesc));
         self.writeReg(Regs.RDH, 0);
         self.writeReg(Regs.RDT, E1000_NUM_RX_DESC - 1);
 
-        self.writeReg(Regs.TDBAL, @as(u32, @truncate(@intFromPtr(self.tx_desc.ptr))));
-        self.writeReg(Regs.TDBAH, @as(u32, @truncate(@intFromPtr(self.tx_desc.ptr) >> 32)));
+        self.writeReg(Regs.TDBAL, virtToPhys(self.tx_desc.ptr));
+        self.writeReg(Regs.TDBAH, 0);
         self.writeReg(Regs.TDLEN, E1000_NUM_TX_DESC * @sizeOf(TxDesc));
         self.writeReg(Regs.TDH, 0);
         self.writeReg(Regs.TDT, 0);

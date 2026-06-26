@@ -1,5 +1,12 @@
 const std = @import("std");
 
+pub const KERNEL_OFFSET = 0xFFFFFFFF80000000;
+
+pub inline fn virtToPhys(vaddr: anytype) u32 {
+    const v = @intFromPtr(vaddr);
+    return if (v < KERNEL_OFFSET) @intCast(v) else @intCast(v -% KERNEL_OFFSET);
+}
+
 pub fn sti() void {
     asm volatile ("sti");
 }
@@ -79,6 +86,15 @@ pub fn inb(port: u16) u8 {
         : [port] "{dx}" (port)
     );
     return val;
+}
+
+pub fn serialCanRead() bool {
+    return inb(0x3F8 + 5) & 1 != 0;
+}
+
+pub fn serialReadChar() u8 {
+    while ((inb(0x3F8 + 5) & 1) == 0) {}
+    return inb(0x3F8);
 }
 
 pub fn initCpu() void {

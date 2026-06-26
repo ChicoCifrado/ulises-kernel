@@ -2,6 +2,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const global_alloc = @import("../mem/global.zig");
 const usb = @import("usb.zig");
+const x86_64 = @import("../arch/x86_64.zig");
 
 const VGA_WIDTH = 80;
 const VGA_HEIGHT = 25;
@@ -47,7 +48,16 @@ pub const Console = struct {
         self.col = 0;
     }
 
+    fn serialPutChar(c: u8) void {
+        while ((x86_64.inb(0x3F8 + 5) & 0x20) == 0) {}
+        x86_64.outb(0x3F8, c);
+    }
+
     pub fn putChar(self: *Console, ch: u8) void {
+        if (builtin.target.os.tag == .freestanding and !builtin.is_test) {
+            if (ch == '\n') serialPutChar('\r');
+            serialPutChar(ch);
+        }
         switch (ch) {
             '\n' => self.newline(),
             '\r' => self.col = 0,
@@ -102,26 +112,51 @@ pub const Console = struct {
         self.write(prompt);
         var idx: usize = 0;
         while (true) {
-            const sc = usb.readScanCode();
-            if (sc == 0) continue;
-            if (sc == 0x28) {
-                buf[idx] = 0;
-                self.write("\n");
-                return buf[0..idx];
-            }
-            if (sc == 0x2A) {
-                if (idx > 0) {
-                    idx -= 1;
-                    self.col -= 1;
-                    vgaWrite(self.row * VGA_WIDTH + self.col, makeAttr(self.fg, self.bg) | ' ');
+            if (usb.isInitialized()) {
+                const sc = usb.readScanCode();
+                if (sc != 0) {
+                    if (sc == 0x28) {
+                        buf[idx] = 0;
+                        self.write("\n");
+                        return buf[0..idx];
+                    }
+                    if (sc == 0x2A) {
+                        if (idx > 0) {
+                            idx -= 1;
+                            self.col -= 1;
+                            vgaWrite(self.row * VGA_WIDTH + self.col, makeAttr(self.fg, self.bg) | ' ');
+                        }
+                        continue;
+                    }
+                    const ch = usb.scanToAscii(sc);
+                    if (ch != 0 and idx < buf.len) {
+                        buf[idx] = ch;
+                        self.putChar(ch);
+                        idx += 1;
+                    }
+                    continue;
                 }
-                continue;
             }
-            const ch = usb.scanToAscii(sc);
-            if (ch != 0 and idx < buf.len) {
-                buf[idx] = ch;
-                self.putChar(ch);
-                idx += 1;
+            if (x86_64.serialCanRead()) {
+                const ch = x86_64.serialReadChar();
+                if (ch == '\r' or ch == '\n') {
+                    buf[idx] = 0;
+                    self.write("\n");
+                    return buf[0..idx];
+                }
+                if (ch == 0x7F or ch == 0x08) {
+                    if (idx > 0) {
+                        idx -= 1;
+                        self.col -= 1;
+                        vgaWrite(self.row * VGA_WIDTH + self.col, makeAttr(self.fg, self.bg) | ' ');
+                    }
+                    continue;
+                }
+                if (ch >= 0x20 and ch < 0x7F and idx < buf.len) {
+                    buf[idx] = ch;
+                    self.putChar(ch);
+                    idx += 1;
+                }
             }
         }
     }
