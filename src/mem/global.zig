@@ -65,6 +65,7 @@ pub fn get() std.mem.Allocator {
 }
 
 pub fn init(pmm_allocator: *pmm.PageAllocator, heap_size: usize) !void {
+    @setRuntimeSafety(false);
     const pages = (heap_size + 4095) / 4096;
     const first = pmm_allocator.allocPage() orelse return error.OutOfMemory;
     base = first;

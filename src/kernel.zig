@@ -25,6 +25,8 @@ const smp = @import("arch/smp.zig");
 const spinlock = @import("sync/spinlock.zig");
 const global_alloc = @import("mem/global.zig");
 
+var page_mem: [1024 * 4096]u8 align(4096) = undefined;
+
 comptime {
     if (builtin.target.cpu.arch == .x86_64 and
         builtin.target.os.tag == .freestanding and
@@ -69,47 +71,107 @@ pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
     h.halt(.panic);
 }
 
-pub export fn kmain() noreturn {
+pub export fn kmain() callconv(.Naked) noreturn {
+    asm volatile (
+        \\.code64
+        // Trace: kmain entered ('K')
+        \\    movb    $0x4B, %al
+        \\    movw    $0xe9, %dx
+        \\    outb    %al, %dx
+        // Align stack to 16 bytes for System V ABI before calling kmainReal
+        \\    subq    $8, %rsp
+        // Call kmainReal (use physical address since identity-mapped)
+        \\    movq    $kmainReal, %rax
+        \\    subq    $0xFFFFFFFF80000000, %rax
+        \\    call    *%rax
+        \\0:
+        \\    cli
+        \\    hlt
+        \\    jmp     0b
+    );
+}
+
+pub export fn kmainReal() noreturn {
     initLogger();
+    // Trace: logger initialized ('L')
+    if (comptime builtin.target.cpu.arch == .x86_64 and builtin.target.os.tag == .freestanding and !builtin.is_test) {
+        asm volatile (
+            \\ movb $0x4C, %al
+            \\ movw $0xe9, %dx
+            \\ outb %al, %dx
+        );
+    }
     var h = hal.Hal.init();
+    // Trace: hal initialized ('H')
+    if (comptime builtin.target.cpu.arch == .x86_64 and builtin.target.os.tag == .freestanding and !builtin.is_test) {
+        asm volatile (
+            \\ movb $0x48, %al
+            \\ movw $0xe9, %dx
+            \\ outb %al, %dx
+        );
+    }
     initPlatform();
+    // Trace: platform initialized ('P')
+    if (comptime builtin.target.cpu.arch == .x86_64 and builtin.target.os.tag == .freestanding and !builtin.is_test) {
+        asm volatile (
+            \\ movb $0x50, %al
+            \\ movw $0xe9, %dx
+            \\ outb %al, %dx
+        );
+    }
     initInterrupts();
+    // Trace: interrupts initialized ('I')
+    if (comptime builtin.target.cpu.arch == .x86_64 and builtin.target.os.tag == .freestanding and !builtin.is_test) {
+        asm volatile (
+            \\ movb $0x49, %al
+            \\ movw $0xe9, %dx
+            \\ outb %al, %dx
+        );
+    }
     initBootDevices();
 
-    var page_mem: [1024 * 4096]u8 align(4096) = undefined;
     var page_allocator = pmm.PageAllocator.init(&page_mem, page_mem.len, 4096);
     smp.initSmp(&page_allocator);
 
     if (builtin.target.os.tag == .freestanding) {
+        const log = @import("hal/logger.zig");
+        log.errorLog("pre-global-init");
         global_alloc.init(&page_allocator, 1024 * 1024) catch {
-            if (builtin.target.cpu.arch == .x86_64) {
-                const log = @import("hal/logger.zig");
-                log.errorLog("global_alloc.init failed");
-            }
+            log.errorLog("global_alloc.init failed");
             h.halt(.panic);
         };
+        log.errorLog("post-global-init");
     }
 
+    const log = @import("hal/logger.zig");
+    log.errorLog("pre-utxo-init");
     const UTXO_SLOTS = 1000;
     const SCRIPT_HEAP_SIZE = 64 * 1024;
 
     var utxo = initUtxoStack(UTXO_SLOTS, SCRIPT_HEAP_SIZE) catch {
-        if (builtin.target.cpu.arch == .x86_64) {
-            const log = @import("hal/logger.zig");
-            log.errorLog("initUtxoStack failed");
-        }
+        log.errorLog("initUtxoStack failed");
         h.halt(.panic);
     };
+    log.errorLog("post-utxo-init");
 
+    log.errorLog("pre-wallet");
     const kernel_alloc = global_alloc.get();
     var wallet_engine = brc100.KernelWallet.init(kernel_alloc, &utxo);
     wallet_engine.setNetwork(.mainnet);
+    log.errorLog("post-wallet");
 
+    log.errorLog("pre-agent");
     _ = initAgent(&h, &wallet_engine);
+    log.errorLog("post-agent");
 
+    log.errorLog("pre-shell");
     var ctx = shell.ShellContext{};
+    log.errorLog("shell-ctx");
     var con = console_mod.Console.init();
+    log.errorLog("console-init");
     con.clear();
+    log.errorLog("console-clear");
+    log.errorLog("pre-shell-run");
     shell.run(&ctx, &con, &wallet_engine);
 
     h.halt(.shutdown);
@@ -137,7 +199,7 @@ fn initPlatform() void {
 fn initInterrupts() void {
     if (builtin.target.cpu.arch == .x86_64 and builtin.target.os.tag == .freestanding and !builtin.is_test) {
         const idt_mod = @import("arch/x86_64/idt.zig");
-        const timer = @import("arch/x86_64/timer.zig");
+        // const timer = @import("arch/x86_64/timer.zig");
         const sched = @import("sched/scheduler.zig");
         const exc = @import("arch/x86_64/exceptions.zig");
         const Handler = struct {
@@ -152,10 +214,10 @@ fn initInterrupts() void {
                 return @intFromPtr(frame);
             }
         };
-        sched.init();
         idt_mod.init(Handler.callback);
-        timer.init(Handler.callback);
-        x86_64.sti();
+        // timer.init(Handler.callback);
+        sched.init();
+        // x86_64.sti();
     }
 }
 

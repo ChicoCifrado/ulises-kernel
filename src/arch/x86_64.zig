@@ -84,6 +84,21 @@ pub fn inb(port: u16) u8 {
 pub fn initCpu() void {
     const result = cpuid(1, 0);
     _ = result;
+
+    // Enable SSE (required because LLVM emits SSE ops like xorps/movups)
+    // CR0: clear EM (bit 4), set MP (bit 1)
+    asm volatile (
+        \\movq    %%cr0, %%rax
+        \\andq    $~0x10, %%rax
+        \\orq     $0x02, %%rax
+        \\movq    %%rax, %%cr0
+    );
+    // CR4: set OSFXSR (bit 9) and OSXMMEXCPT (bit 10)
+    asm volatile (
+        \\movq    %%cr4, %%rax
+        \\orq     $0x600, %%rax
+        \\movq    %%rax, %%cr4
+    );
 }
 
 test "cpuid works" {

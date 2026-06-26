@@ -468,27 +468,19 @@ pub fn initSmp(page_allocator: *pmm.PageAllocator) void {
     page_alloc = page_allocator;
     if (builtin.target.cpu.arch != .x86_64) return;
 
-    parseAcpiTables();
-    lapicInit();
-    ioapicInit();
+    // TODO: map IOAPIC (0xFEC00000) and LAPIC (0xFEE00000) in page tables first
+    // parseAcpiTables();
+    // lapicInit();
+    // ioapicInit();
 
-    if (cpu_count == 0) {
-        cpu_count = 1;
-        cpu_table[0] = .{
-            .cpu_id = 0,
-            .apic_id = lapicId(),
-            .state = .running,
-            .stack_base = 0,
-            .lapic_base = lapic_base,
-        };
-    }
-
-    if (cpu_count <= 1) return;
-
-    writeTrampoline();
-    for (1..cpu_count) |i| {
-        _ = wakeUpCpu(@as(u32, @intCast(i)));
-    }
+    cpu_count = 1;
+    cpu_table[0] = .{
+        .cpu_id = 0,
+        .apic_id = 0,
+        .state = .running,
+        .stack_base = 0,
+        .lapic_base = lapic_base,
+    };
 }
 
 pub fn cpuCount() u32 {
