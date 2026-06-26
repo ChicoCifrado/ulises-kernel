@@ -54,9 +54,8 @@ fn setupStack(stack: []u8, entry: *const fn () void) u64 {
 }
 
 pub fn onTimerTick(frame: *const idt_mod.InterruptFrame) u64 {
-    // TODO: map LAPIC (0xFEE00000) in page tables, then call tmr.eoi()
-    // const tmr = @import("../arch/x86_64/timer.zig");
-    // tmr.eoi();
+    const tmr = @import("../arch/x86_64/timer.zig");
+    tmr.eoi();
     tick_counter += 1;
     if (tick_counter % TICK_QUANTUM != 0) return @intFromPtr(frame);
     if (task_count <= 1) return @intFromPtr(frame);

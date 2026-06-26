@@ -128,50 +128,41 @@ pub export fn kmainReal() noreturn {
             \\ outb %al, %dx
         );
     }
-    initBootDevices();
-
     var page_allocator = pmm.PageAllocator.init(&page_mem, page_mem.len, 4096);
     smp.initSmp(&page_allocator);
 
     if (builtin.target.os.tag == .freestanding) {
-        const log = @import("hal/logger.zig");
-        log.errorLog("pre-global-init");
         global_alloc.init(&page_allocator, 1024 * 1024) catch {
-            log.errorLog("global_alloc.init failed");
+            if (builtin.target.cpu.arch == .x86_64) {
+                const log = @import("hal/logger.zig");
+                log.errorLog("global_alloc.init failed");
+            }
             h.halt(.panic);
         };
-        log.errorLog("post-global-init");
     }
 
-    const log = @import("hal/logger.zig");
-    log.errorLog("pre-utxo-init");
+    initBootDevices();
+
     const UTXO_SLOTS = 1000;
     const SCRIPT_HEAP_SIZE = 64 * 1024;
 
     var utxo = initUtxoStack(UTXO_SLOTS, SCRIPT_HEAP_SIZE) catch {
-        log.errorLog("initUtxoStack failed");
+        if (builtin.target.cpu.arch == .x86_64) {
+            const log = @import("hal/logger.zig");
+            log.errorLog("initUtxoStack failed");
+        }
         h.halt(.panic);
     };
-    log.errorLog("post-utxo-init");
 
-    log.errorLog("pre-wallet");
     const kernel_alloc = global_alloc.get();
     var wallet_engine = brc100.KernelWallet.init(kernel_alloc, &utxo);
     wallet_engine.setNetwork(.mainnet);
-    log.errorLog("post-wallet");
 
-    log.errorLog("pre-agent");
     _ = initAgent(&h, &wallet_engine);
-    log.errorLog("post-agent");
 
-    log.errorLog("pre-shell");
     var ctx = shell.ShellContext{};
-    log.errorLog("shell-ctx");
     var con = console_mod.Console.init();
-    log.errorLog("console-init");
     con.clear();
-    log.errorLog("console-clear");
-    log.errorLog("pre-shell-run");
     shell.run(&ctx, &con, &wallet_engine);
 
     h.halt(.shutdown);
@@ -199,7 +190,7 @@ fn initPlatform() void {
 fn initInterrupts() void {
     if (builtin.target.cpu.arch == .x86_64 and builtin.target.os.tag == .freestanding and !builtin.is_test) {
         const idt_mod = @import("arch/x86_64/idt.zig");
-        // const timer = @import("arch/x86_64/timer.zig");
+        const timer_mod = @import("arch/x86_64/timer.zig");
         const sched = @import("sched/scheduler.zig");
         const exc = @import("arch/x86_64/exceptions.zig");
         const Handler = struct {
@@ -215,9 +206,9 @@ fn initInterrupts() void {
             }
         };
         idt_mod.init(Handler.callback);
-        // timer.init(Handler.callback);
+        timer_mod.init(Handler.callback);
         sched.init();
-        // x86_64.sti();
+        x86_64.sti();
     }
 }
 

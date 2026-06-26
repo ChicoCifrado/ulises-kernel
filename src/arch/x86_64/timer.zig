@@ -14,8 +14,7 @@ pub fn init(callback: *const fn (*const idt_mod.InterruptFrame) callconv(.C) u64
     x86_64.outb(0x43, 0x34);
     x86_64.outb(0x40, @as(u8, @truncate(divisor)));
     x86_64.outb(0x40, @as(u8, @truncate(divisor >> 8)));
-    // TODO: map IOAPIC (0xFEC00000) in page tables before using it
-    // smp.ioapicRedirectIrq(0, 0x20, 0);
+    smp.ioapicRedirectIrq(0, 0x20, 0);
 }
 
 pub fn eoi() void {

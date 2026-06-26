@@ -8,6 +8,7 @@ export var kernel_stack: [32768]u8 align(16) linksection(".early.data") = undefi
 export var pml4: [512]u64 align(4096) linksection(".early.data") = [_]u64{0} ** 512;
 export var pdpt: [512]u64 align(4096) linksection(".early.data") = [_]u64{0} ** 512;
 export var pd: [512]u64 align(4096) linksection(".early.data") = [_]u64{0} ** 512;
+export var pd_mmio: [512]u64 align(4096) linksection(".early.data") = [_]u64{0} ** 512;
 
 export var boot_gdt: [24]u8 align(8) linksection(".early.data") = [_]u8{0} ** 24;
 export var boot_gdt_desc: [6]u8 linksection(".early.data") = [_]u8{0} ** 6;
@@ -90,6 +91,21 @@ export fn _start() linksection(".early.text") callconv(.Naked) noreturn {
         // Kernel at 0xFFFFFFFF80000000+ falls in PML4[511] range.
         \\    movl    %eax, pml4 + 511*8
         \\    movl    $0, pml4 + 511*8 + 4
+        // Map IOAPIC (0xFEC00000) and LAPIC (0xFEE00000) via PDPT[3] -> pd_mmio
+        // Zero pd_mmio (part of .early.data, already zeroed)
+        // PDPT[3] -> pd_mmio (physical address)
+        \\    leal    pd_mmio, %eax
+        \\    orl     $0x03, %eax
+        \\    movl    %eax, pdpt + 3*8
+        \\    movl    $0, pdpt + 3*8 + 4
+        // pd_mmio[502] = 0xFEC00000 | 0x93 (IOAPIC, 2MB UC r/w page)
+        \\    movl    $0xFEC00000, pd_mmio + 502*8
+        \\    orl     $0x93, pd_mmio + 502*8
+        \\    movl    $0, pd_mmio + 502*8 + 4
+        // pd_mmio[503] = 0xFEE00000 | 0x93 (LAPIC, 2MB UC r/w page)
+        \\    movl    $0xFEE00000, pd_mmio + 503*8
+        \\    orl     $0x93, pd_mmio + 503*8
+        \\    movl    $0, pd_mmio + 503*8 + 4
         // Set up GDT for long mode transition
         // GDT[0]: null descriptor
         \\    movl    $0, boot_gdt

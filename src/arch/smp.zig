@@ -468,10 +468,9 @@ pub fn initSmp(page_allocator: *pmm.PageAllocator) void {
     page_alloc = page_allocator;
     if (builtin.target.cpu.arch != .x86_64) return;
 
-    // TODO: map IOAPIC (0xFEC00000) and LAPIC (0xFEE00000) in page tables first
-    // parseAcpiTables();
-    // lapicInit();
-    // ioapicInit();
+    parseAcpiTables();
+    lapicInit();
+    ioapicInit();
 
     cpu_count = 1;
     cpu_table[0] = .{
