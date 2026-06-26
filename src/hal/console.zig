@@ -68,12 +68,12 @@ pub const Console = struct {
             0x08 => {
                 if (self.col > 0) {
                     self.col -= 1;
-                    vgaWrite(self.row * VGA_WIDTH + self.col, makeAttr(self.fg, self.bg) | ' ');
+                    vgaWrite(@as(usize, self.row) * VGA_WIDTH + @as(usize, self.col), makeAttr(self.fg, self.bg) | ' ');
                 }
             },
             0x00...0x07, 0x0B...0x0C, 0x0E...0x1F => {},
             else => {
-                vgaWrite(self.row * VGA_WIDTH + self.col, makeAttr(self.fg, self.bg) | ch);
+                vgaWrite(@as(usize, self.row) * VGA_WIDTH + @as(usize, self.col), makeAttr(self.fg, self.bg) | ch);
                 self.col += 1;
                 if (self.col >= VGA_WIDTH) self.newline();
             },
@@ -124,7 +124,7 @@ pub const Console = struct {
                         if (idx > 0) {
                             idx -= 1;
                             self.col -= 1;
-                            vgaWrite(self.row * VGA_WIDTH + self.col, makeAttr(self.fg, self.bg) | ' ');
+                            vgaWrite(@as(usize, self.row) * VGA_WIDTH + @as(usize, self.col), makeAttr(self.fg, self.bg) | ' ');
                         }
                         continue;
                     }
@@ -148,7 +148,7 @@ pub const Console = struct {
                     if (idx > 0) {
                         idx -= 1;
                         self.col -= 1;
-                        vgaWrite(self.row * VGA_WIDTH + self.col, makeAttr(self.fg, self.bg) | ' ');
+                        vgaWrite(@as(usize, self.row) * VGA_WIDTH + @as(usize, self.col), makeAttr(self.fg, self.bg) | ' ');
                     }
                     continue;
                 }
@@ -166,7 +166,7 @@ fn makeAttr(fg: ConsoleColor, bg: ConsoleColor) u16 {
     return (@as(u16, @intFromEnum(bg)) << 12) | (@as(u16, @intFromEnum(fg)) << 8);
 }
 
-fn vgaWrite(offset: u16, val: u16) void {
+fn vgaWrite(offset: usize, val: u16) void {
     if (builtin.is_test) return;
     VGA_ADDR[offset] = val;
 }

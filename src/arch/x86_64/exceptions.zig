@@ -3,6 +3,9 @@ const builtin = @import("builtin");
 const idt_mod = @import("idt.zig");
 const x86_64 = @import("../x86_64.zig");
 
+var panic_stack: [4096]u8 align(16) = undefined;
+var panic_in_progress: bool = false;
+
 const names = [32][]const u8{
     "Divide By Zero (#DE)",
     "Debug (#DB)",
@@ -120,9 +123,22 @@ fn dumpReg(label: []const u8, val: u64) void {
 
 pub fn handler(frame: *const idt_mod.InterruptFrame) u64 {
     x86_64.cli();
+    if (panic_in_progress) {
+        while (true) {
+            asm volatile ("cli; hlt");
+        }
+    }
+    panic_in_progress = true;
+    const saved_frame = frame;
+    asm volatile (
+        \\movq %[stack_top], %%rsp
+        : : [stack_top] "r" (&panic_stack[panic_stack.len - 8]) :
+    );
+    _ = &saved_frame;
+    const f = saved_frame;
     logRaw("===== KERNEL PANIC =====");
 
-    const vec = frame.vector;
+    const vec = f.vector;
     if (vec < 32) {
         var dbuf: [21]u8 = undefined;
         const d = dec64(vec, &dbuf);
@@ -136,7 +152,7 @@ pub fn handler(frame: *const idt_mod.InterruptFrame) u64 {
 
     if (vec == 14) {
         const cr2 = readCr2();
-        const err = frame.error_code;
+        const err = f.error_code;
         var cr2buf: [18]u8 = undefined;
         const cr2h = hex64(cr2, &cr2buf);
         logRaw("Page-Fault Information:");
@@ -158,7 +174,7 @@ pub fn handler(frame: *const idt_mod.InterruptFrame) u64 {
         }
     } else if (hasErrCode(@as(u8, @truncate(vec)))) {
         var ebuf: [18]u8 = undefined;
-        const eh = hex64(frame.error_code, &ebuf);
+        const eh = hex64(f.error_code, &ebuf);
         var em: [32]u8 = undefined;
         var ei: usize = 0;
         for ("  Error Code: ") |ch| { em[ei] = ch; ei += 1; }
@@ -167,26 +183,26 @@ pub fn handler(frame: *const idt_mod.InterruptFrame) u64 {
     }
 
     logRaw("--- Registers ---");
-    dumpReg("RDI", frame.rdi);
-    dumpReg("RSI", frame.rsi);
-    dumpReg("RDX", frame.rdx);
-    dumpReg("RCX", frame.rcx);
-    dumpReg("R8 ", frame.r8);
-    dumpReg("R9 ", frame.r9);
-    dumpReg("R10", frame.r10);
-    dumpReg("R11", frame.r11);
-    dumpReg("RBX", frame.rbx);
-    dumpReg("RBP", frame.rbp);
-    dumpReg("R12", frame.r12);
-    dumpReg("R13", frame.r13);
-    dumpReg("R14", frame.r14);
-    dumpReg("R15", frame.r15);
+    dumpReg("RDI", f.rdi);
+    dumpReg("RSI", f.rsi);
+    dumpReg("RDX", f.rdx);
+    dumpReg("RCX", f.rcx);
+    dumpReg("R8 ", f.r8);
+    dumpReg("R9 ", f.r9);
+    dumpReg("R10", f.r10);
+    dumpReg("R11", f.r11);
+    dumpReg("RBX", f.rbx);
+    dumpReg("RBP", f.rbp);
+    dumpReg("R12", f.r12);
+    dumpReg("R13", f.r13);
+    dumpReg("R14", f.r14);
+    dumpReg("R15", f.r15);
     logRaw("");
-    dumpReg("RIP", frame.rip);
-    dumpReg("CS ", frame.cs);
-    dumpReg("RFL", frame.rflags);
-    dumpReg("RSP", frame.rsp);
-    dumpReg("SS ", frame.ss);
+    dumpReg("RIP", f.rip);
+    dumpReg("CS ", f.cs);
+    dumpReg("RFL", f.rflags);
+    dumpReg("RSP", f.rsp);
+    dumpReg("SS ", f.ss);
     logRaw("==========================");
 
     logRaw("System halted.");

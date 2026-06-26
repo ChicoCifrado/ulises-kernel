@@ -112,6 +112,14 @@ fn acpiFindRsdp() ?u64 {
     return null;
 }
 
+fn readUnaligned(comptime T: type, ptr: [*]const u8, offset: usize) T {
+    var result: T = 0;
+    for (0..@sizeOf(T)) |i| {
+        result |= @as(T, ptr[offset + i]) << @intCast(8 * i);
+    }
+    return result;
+}
+
 fn acpiChecksum(ptr: [*]const u8, len: usize) bool {
     var sum: u8 = 0;
     for (0..len) |i| sum +%= ptr[i];
@@ -119,7 +127,7 @@ fn acpiChecksum(ptr: [*]const u8, len: usize) bool {
 }
 
 fn parseMadt(madt: [*]const u8, len: usize) void {
-    const local_apic = @as(*const u32, @ptrFromInt(@intFromPtr(madt) + 0x24)).*;
+    const local_apic = readUnaligned(u32, madt, 0x24);
     lapic_base = if (local_apic != 0) @as(u64, local_apic) else LAPIC_BASE_DEFAULT;
 
     var off: usize = 0x2C;
@@ -131,7 +139,7 @@ fn parseMadt(madt: [*]const u8, len: usize) void {
         if (entry_type == 0) {
             if (cpu_count < MAX_CPUS) {
                 const apic_id = madt[off + 3];
-                const flags = @as(*const u32, @ptrFromInt(@intFromPtr(madt) + off + 4)).*;
+                const flags = readUnaligned(u32, madt, off + 4);
                 if (flags & 1 != 0) {
                     cpu_table[cpu_count] = .{
                         .cpu_id = cpu_count,
@@ -144,11 +152,11 @@ fn parseMadt(madt: [*]const u8, len: usize) void {
                 }
             }
         } else if (entry_type == 1) {
-            const io_addr = @as(*const u32, @ptrFromInt(@intFromPtr(madt) + off + 4)).*;
+            const io_addr = readUnaligned(u32, madt, off + 4);
             ioapic_base = @as(u64, io_addr);
         } else if (entry_type == 2) {
             const irq = madt[off + 2];
-            const flags = @as(*const u16, @ptrFromInt(@intFromPtr(madt) + off + 4)).*;
+            const flags = readUnaligned(u16, madt, off + 4);
             if (irq == 0) {
                 ioapic_irq_start = flags;
             }
@@ -157,19 +165,23 @@ fn parseMadt(madt: [*]const u8, len: usize) void {
     }
 }
 
+fn readUnalignedSlice(comptime T: type, base: usize, offset: usize) T {
+    return readUnaligned(T, @as([*]const u8, @ptrFromInt(base)), offset);
+}
+
 fn parseAcpiTables() void {
     const rsdp_addr = acpiFindRsdp() orelse return;
     const revision = @as(*const u8, @ptrFromInt(rsdp_addr + 15)).*;
 
     if (revision >= 2) {
-        const xsdt = @as(*const u64, @ptrFromInt(rsdp_addr + 24)).*;
+        const xsdt = readUnalignedSlice(u64, rsdp_addr, 24);
         if (xsdt != 0) {
-            const xsdt_len: usize = @intCast(@as(*const u32, @ptrFromInt(xsdt + 4)).*);
+            const xsdt_len: usize = @intCast(readUnalignedSlice(u32, xsdt, 4));
             if (acpiChecksum(@as([*]const u8, @ptrFromInt(xsdt)), xsdt_len)) {
                 for (0..(xsdt_len - 36) / 8) |i| {
-                    const entry = @as(*const u64, @ptrFromInt(xsdt + 36 + i * 8)).*;
+                    const entry = readUnalignedSlice(u64, xsdt, 36 + i * 8);
                     if (std.mem.eql(u8, @as(*const [4]u8, @ptrFromInt(entry)), "APIC")) {
-                        const madt_len: usize = @intCast(@as(*const u32, @ptrFromInt(entry + 4)).*);
+                        const madt_len: usize = @intCast(readUnalignedSlice(u32, entry, 4));
                         parseMadt(@as([*]const u8, @ptrFromInt(entry)), madt_len);
                         return;
                     }
@@ -178,16 +190,16 @@ fn parseAcpiTables() void {
         }
     }
 
-    const rsdt = @as(*const u32, @ptrFromInt(rsdp_addr + 16)).*;
+    const rsdt = readUnalignedSlice(u32, rsdp_addr, 16);
     if (rsdt == 0) return;
     const hdr = @as([*]const u8, @ptrFromInt(@as(u64, rsdt)));
-    const rsdt_len: usize = @intCast(@as(*const u32, @ptrFromInt(rsdt + 4)).*);
+    const rsdt_len: usize = @intCast(readUnalignedSlice(u32, rsdt, 4));
     if (!acpiChecksum(hdr, rsdt_len)) return;
 
     for (0..(rsdt_len - 36) / 4) |i| {
-        const entry = @as(*const u32, @ptrFromInt(rsdt + 36 + i * 4)).*;
+        const entry = readUnalignedSlice(u32, rsdt, 36 + i * 4);
         if (std.mem.eql(u8, @as(*const [4]u8, @ptrFromInt(@as(u64, entry))), "APIC")) {
-            const madt_len: usize = @intCast(@as(*const u32, @ptrFromInt(@as(u64, entry + 4))).*);
+            const madt_len: usize = @intCast(readUnalignedSlice(u32, entry, 4));
             parseMadt(@as([*]const u8, @ptrFromInt(@as(u64, entry))), madt_len);
             return;
         }
