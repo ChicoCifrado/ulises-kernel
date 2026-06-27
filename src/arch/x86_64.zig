@@ -105,8 +105,10 @@ pub fn invlpg(vaddr: u64) void {
 /// using the pd_mmio page directory (covers physical 3-4GB).
 /// phys must be in 0xC0000000-0xFFFFFFFF range. 4KB-aligned.
 pub fn mapMmioRegion(phys: u64, size: u64, page_alloc: anytype) void {
+    @setRuntimeSafety(false);
     const boot = @import("x86_64/boot.zig");
-    const pd_phys = @intFromPtr(&boot.pd_mmio) - KERNEL_OFFSET;
+    const pd_vaddr = @intFromPtr(&boot.pd_mmio);
+    const pd_phys = if (pd_vaddr >= KERNEL_OFFSET) pd_vaddr -% KERNEL_OFFSET else pd_vaddr;
     const pd: [*]volatile u64 = @ptrFromInt(pd_phys);
 
     var addr = phys;
@@ -134,7 +136,7 @@ pub fn mapMmioRegion(phys: u64, size: u64, page_alloc: anytype) void {
             addr = pt_end;
         }
     }
-    asm volatile ("mov %[cr3], %%cr3" : : [cr3] "r" (@as(u64, @intFromPtr(&boot.pml4)) - KERNEL_OFFSET) : "memory");
+    asm volatile ("mov %[cr3], %%cr3" : : [cr3] "r" (@as(u64, @intFromPtr(&boot.pml4))) : "memory");
 }
 
 pub fn initCpu() void {

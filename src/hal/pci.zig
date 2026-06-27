@@ -18,45 +18,21 @@ pub const PciDevice = struct {
     irq: u8,
 };
 
-fn inl(port: u16) u32 {
-    var val: u32 = undefined;
-    asm volatile ("inl %[port], %[val]"
-        : [val] "={eax}" (val),
-        :           [port] "{dx}" (port),
-    );
-    return val;
-}
-
-fn outl(port: u16, val: u32) void {
-    asm volatile ("outl %[val], %[port]"
-        :
-        : [val] "{eax}" (val),
-          [port] "{dx}" (port),
-    );
-}
-
-fn pciConfigRead(bus: u8, device: u8, func: u8, offset: u8) u32 {
-    const addr = @as(u32, 0x80000000) |
-        (@as(u32, bus) << 16) |
-        (@as(u32, device) << 11) |
-        (@as(u32, func) << 8) |
-        (@as(u32, offset) & 0xFC);
-    outl(CONFIG_ADDR, addr);
-    return inl(CONFIG_DATA);
-}
+extern fn pciConfigReadC(bus: u8, device: u8, func: u8, offset: u8) callconv(.C) u32;
 
 pub fn mapMmioBars(page_alloc: anytype) void {
     const x86_64 = @import("../arch/x86_64.zig");
+    x86_64.cli();
+    defer x86_64.sti();
     for (0..256) |bus| {
         for (0..32) |dev| {
             const b: u8 = @truncate(bus);
             const d: u8 = @truncate(dev);
-            asm volatile ("movb $0x47, %al; movw $0xe9, %dx; outb %al, %dx");
-            const vendor = pciConfigRead(b, d, 0, 0);
+            const vendor = pciConfigReadC(b, d, 0, 0);
             if (vendor == 0xFFFFFFFF) continue;
-            var bar_offs: u8 = 0x10;
+            var bar_offs: u32 = 0x10;
             while (bar_offs <= 0x24) {
-                const bar = pciConfigRead(b, d, 0, bar_offs);
+                const bar = pciConfigReadC(b, d, 0, @as(u8, @truncate(bar_offs)));
                 const is_mmio = bar & 1 == 0 and bar != 0;
                 const is_64bit = (bar >> 1) & 0x03 == 2;
                 if (is_mmio) {
@@ -73,17 +49,20 @@ pub fn mapMmioBars(page_alloc: anytype) void {
 }
 
 pub fn enumerate(allocator: std.mem.Allocator) ![]PciDevice {
+    const x86_64 = @import("../arch/x86_64.zig");
     var devices = std.ArrayList(PciDevice).init(allocator);
     errdefer devices.deinit();
+    x86_64.cli();
+    defer x86_64.sti();
 
     for (0..256) |bus| {
         for (0..32) |dev| {
-            const vendor = pciConfigRead(@as(u8, @intCast(bus)), @as(u8, @intCast(dev)), 0, 0);
+            const vendor = pciConfigReadC(@as(u8, @intCast(bus)), @as(u8, @intCast(dev)), 0, 0);
             if (vendor == 0xFFFFFFFF) continue;
 
-            const class_reg = pciConfigRead(@as(u8, @intCast(bus)), @as(u8, @intCast(dev)), 0, 8);
-            const bar0 = pciConfigRead(@as(u8, @intCast(bus)), @as(u8, @intCast(dev)), 0, 0x10);
-            const irq_reg = pciConfigRead(@as(u8, @intCast(bus)), @as(u8, @intCast(dev)), 0, 0x3C);
+            const class_reg = pciConfigReadC(@as(u8, @intCast(bus)), @as(u8, @intCast(dev)), 0, 8);
+            const bar0 = pciConfigReadC(@as(u8, @intCast(bus)), @as(u8, @intCast(dev)), 0, 0x10);
+            const irq_reg = pciConfigReadC(@as(u8, @intCast(bus)), @as(u8, @intCast(dev)), 0, 0x3C);
 
             try devices.append(.{
                 .bus = @as(u8, @intCast(bus)),
@@ -95,7 +74,7 @@ pub fn enumerate(allocator: std.mem.Allocator) ![]PciDevice {
                 .subclass = @as(u8, @truncate(class_reg >> 16)),
                 .prog_if = @as(u8, @truncate(class_reg >> 8)),
                 .bar0 = bar0,
-                .bar1 = pciConfigRead(@as(u8, @intCast(bus)), @as(u8, @intCast(dev)), 0, 0x14),
+                .bar1 = pciConfigReadC(@as(u8, @intCast(bus)), @as(u8, @intCast(dev)), 0, 0x14),
                 .irq = @as(u8, @truncate(irq_reg)),
             });
         }

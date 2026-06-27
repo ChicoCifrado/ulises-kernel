@@ -20,12 +20,15 @@ const console_mod = @import("hal/console.zig");
 const usb = @import("hal/usb.zig");
 const pci = @import("hal/pci.zig");
 const e1000 = @import("net/e1000.zig");
+const net_stack = @import("net/stack.zig");
 const shell = @import("shell/shell.zig");
 const smp = @import("arch/smp.zig");
 const spinlock = @import("sync/spinlock.zig");
 const global_alloc = @import("mem/global.zig");
 
 var page_mem: [1024 * 4096]u8 align(4096) = undefined;
+var nic: e1000.E1000 = undefined;
+var g_stack: net_stack.Stack = undefined;
 
 comptime {
     if (builtin.target.cpu.arch == .x86_64 and
@@ -92,14 +95,39 @@ pub export fn kmain() callconv(.Naked) noreturn {
 }
 
 pub export fn kmainReal() noreturn {
+    asm volatile ("movb $0x21, %al; movw $0xe9, %dx; outb %al, %dx");
     initLogger();
     var h = hal.Hal.init();
+    {
+        const log = @import("hal/logger.zig");
+        log.write("[Z1]\n");
+    }
     initPlatform();
+    {
+        const log = @import("hal/logger.zig");
+        log.write("[ZA]\n");
+    }
     initInterrupts();
+    {
+        const log = @import("hal/logger.zig");
+        log.write("[ZB]\n");
+    }
     var page_allocator = pmm.PageAllocator.init(&page_mem, page_mem.len, 4096);
+    {
+        const log = @import("hal/logger.zig");
+        log.write("[ZC]\n");
+    }
     smp.initSmp(&page_allocator);
+    {
+        const log = @import("hal/logger.zig");
+        log.write("[ZD]\n");
+    }
 
     if (builtin.target.os.tag == .freestanding) {
+        {
+            const log = @import("hal/logger.zig");
+            log.write("[GA]\n");
+        }
         global_alloc.init(&page_allocator, 1024 * 1024) catch {
             if (builtin.target.cpu.arch == .x86_64) {
                 const log = @import("hal/logger.zig");
@@ -107,8 +135,13 @@ pub export fn kmainReal() noreturn {
             }
             h.halt(.panic);
         };
+        {
+            const log = @import("hal/logger.zig");
+            log.write("[GB]\n");
+        }
     }
 
+    asm volatile ("movb $0x62, %al; movw $0xe9, %dx; outb %al, %dx"); // 'b'
     initBootDevices(&page_allocator);
     const UTXO_SLOTS = 1000;
     const SCRIPT_HEAP_SIZE = 64 * 1024;
@@ -181,11 +214,42 @@ fn initInterrupts() void {
 
 fn initBootDevices(page_allocator: *pmm.PageAllocator) void {
     if (builtin.target.cpu.arch == .x86_64) {
+        {
+            const log = @import("hal/logger.zig");
+            log.write("[BD]\n");
+        }
         asm volatile ("movb $0x4D, %al; movw $0xe9, %dx; outb %al, %dx"); // 'M'
+        {
+            const log = @import("hal/logger.zig");
+            log.write("[MM]\n");
+        }
         pci.mapMmioBars(page_allocator);
+        {
+            const log = @import("hal/logger.zig");
+            log.write("[mm]\n");
+        }
         asm volatile ("movb $0x6D, %al; movw $0xe9, %dx; outb %al, %dx"); // 'm'
         usb.init();
         asm volatile ("movb $0x55, %al; movw $0xe9, %dx; outb %al, %dx"); // 'U'
+
+        const allocator = global_alloc.get();
+        const pci_devs = pci.enumerate(allocator) catch {
+            return;
+        };
+        defer allocator.free(pci_devs);
+
+        for (pci_devs) |dev| {
+            if (dev.class_code == 0x02 and dev.subclass == 0x00) {
+                asm volatile ("movb $0x45, %al; movw $0xe9, %dx; outb %al, %dx"); // 'E'
+                const mmio_base: [*]volatile u32 = @ptrFromInt(dev.bar0 & 0xFFFFFFF0);
+                nic = e1000.E1000.init(allocator, mmio_base) catch {
+                    logError("e1000 init failed");
+                    continue;
+                };
+                asm volatile ("movb $0x65, %al; movw $0xe9, %dx; outb %al, %dx"); // 'e'
+                break;
+            }
+        }
     }
 }
 

@@ -144,7 +144,7 @@ pub const Stack = struct {
         eth_hdr.* = ether.EtherHeader.init(ether.broadcastMac().*, self.our_mac, @intFromEnum(ether.EtherType.arp));
 
         const arp_req = arp.ArpPacket.initRequest(self.our_mac, self.our_ip, target_ip);
-        @memcpy(buf[ether.ETH_HLEN..][0..@sizeOf(arp.ArpPacket)], std::mem.asBytes(&arp_req));
+        @memcpy(buf[ether.ETH_HLEN..][0..@sizeOf(arp.ArpPacket)], std.mem.asBytes(&arp_req));
 
         self.nic.send(&buf);
     }

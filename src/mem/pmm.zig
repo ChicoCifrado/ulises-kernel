@@ -11,19 +11,21 @@ pub const PageAllocator = struct {
     pub fn init(base: [*]u8, total_bytes: usize, page_size: usize) PageAllocator {
         const total_pages = total_bytes / page_size;
         const stack_size = total_pages * @sizeOf(usize);
+        const stack_pages = (stack_size + page_size - 1) / page_size;
+        const useable_pages = total_pages - stack_pages;
         const stack_base = @as([*]u8, @ptrCast(base))[total_bytes - stack_size ..][0..stack_size];
         const free_stack: []usize = @as([]usize, @ptrCast(@alignCast(stack_base)));
 
         const pa = PageAllocator{
             .base = base,
-            .total_pages = total_pages,
+            .total_pages = useable_pages,
             .free_stack = free_stack,
-            .free_count = total_pages,
+            .free_count = useable_pages,
             .page_size = page_size,
         };
 
-        for (0..total_pages) |i| {
-            free_stack[total_pages - 1 - i] = i;
+        for (0..useable_pages) |i| {
+            free_stack[useable_pages - 1 - i] = i;
         }
 
         return pa;

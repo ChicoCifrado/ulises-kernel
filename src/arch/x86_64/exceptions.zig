@@ -123,6 +123,36 @@ fn dumpReg(label: []const u8, val: u64) void {
 
 pub fn handler(frame: *const idt_mod.InterruptFrame) u64 {
     x86_64.cli();
+    var cr2_val: u64 = undefined;
+    if (frame.vector == 14) {
+        asm volatile ("mov %%cr2, %[v]" : [v] "=r" (cr2_val));
+    }
+    const vec_byte = @as(u8, @truncate(frame.vector));
+    while ((x86_64.inb(0x3F8 + 5) & 0x20) == 0) {}
+    x86_64.outb(0x3F8, '0' + (vec_byte / 10));
+    while ((x86_64.inb(0x3F8 + 5) & 0x20) == 0) {}
+    x86_64.outb(0x3F8, '0' + (vec_byte % 10));
+    while ((x86_64.inb(0x3F8 + 5) & 0x20) == 0) {}
+    x86_64.outb(0x3F8, ' ');
+    while ((x86_64.inb(0x3F8 + 5) & 0x20) == 0) {}
+    if (frame.vector == 14) {
+        const b7 = @as(u8, @truncate(cr2_val >> 56));
+        const b6 = @as(u8, @truncate(cr2_val >> 48));
+        const b5 = @as(u8, @truncate(cr2_val >> 40));
+        const b4 = @as(u8, @truncate(cr2_val >> 32));
+        const b3 = @as(u8, @truncate(cr2_val >> 24));
+        const b2 = @as(u8, @truncate(cr2_val >> 16));
+        const b1 = @as(u8, @truncate(cr2_val >> 8));
+        const b0 = @as(u8, @truncate(cr2_val));
+        for ([8]u8{ b7, b6, b5, b4, b3, b2, b1, b0 }) |byte| {
+            while ((x86_64.inb(0x3F8 + 5) & 0x20) == 0) {}
+            x86_64.outb(0x3F8, byte);
+        }
+    }
+    while ((x86_64.inb(0x3F8 + 5) & 0x20) == 0) {}
+    x86_64.outb(0x3F8, '\r');
+    while ((x86_64.inb(0x3F8 + 5) & 0x20) == 0) {}
+    x86_64.outb(0x3F8, '\n');
     if (panic_in_progress) {
         while (true) {
             asm volatile ("cli; hlt");
