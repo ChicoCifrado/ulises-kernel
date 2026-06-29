@@ -70,15 +70,15 @@ pub const Wallet = struct {
     }
 
     pub fn utxos(self: *Wallet, utxo: *const utxo_stack.UtxoStack, allocator: std.mem.Allocator) ![]UtxoEntry {
-        var entries = std.ArrayList(UtxoEntry).init(allocator);
-        errdefer entries.deinit();
+        var entries: std.ArrayList(UtxoEntry) = .empty;
+        errdefer entries.deinit(allocator);
 
         for (0..utxo.capacity) |i| {
             const slot = utxo.get(i) orelse continue;
             if (slot.isSpent()) continue;
             const sc = utxo.getScript(slot) orelse continue;
             if (self.address.matchesScript(sc)) {
-                try entries.append(UtxoEntry{
+                try entries.append(allocator, UtxoEntry{
                     .slot_idx = i,
                     .txid = slot.txid,
                     .vout = slot.vout,
@@ -87,7 +87,7 @@ pub const Wallet = struct {
                 });
             }
         }
-        return entries.toOwnedSlice();
+        return entries.toOwnedSlice(allocator);
     }
 };
 
@@ -148,7 +148,7 @@ pub const WalletManager = struct {
 };
 
 test "address matching" {
-    const hash = [_]u8{0xAA} ** 20;
+    const hash: [20]u8 = @splat(0xAA);
     const addr = Address.fromPubkeyHash(hash, .mainnet);
 
     const allocator = std.testing.allocator;
@@ -162,8 +162,8 @@ test "address matching" {
 }
 
 test "address non-matching" {
-    const hash_a = [_]u8{0xAA} ** 20;
-    const hash_b = [_]u8{0xBB} ** 20;
+    const hash_a: [20]u8 = @splat(0xAA);
+    const hash_b: [20]u8 = @splat(0xBB);
     const addr = Address.fromPubkeyHash(hash_a, .mainnet);
 
     const allocator = std.testing.allocator;
@@ -181,7 +181,7 @@ test "wallet balance" {
     var stack = try utxo_stack.UtxoStack.init(allocator, 1024, 65536);
     defer stack.deinit();
 
-    const hash = [_]u8{0xAA} ** 20;
+    const hash: [20]u8 = @splat(0xAA);
     const addr = Address.fromPubkeyHash(hash, .mainnet);
 
     var b = builder.ScriptBuilder.init(allocator);
@@ -190,7 +190,7 @@ test "wallet balance" {
     const sc3 = try b.finish();
     defer allocator.free(sc3);
 
-    const txid = [_]u8{0xAA} ** 32;
+    const txid: [32]u8 = @splat(0xAA);
     const slot = utxo_slot.Slot.init(txid, 0, 100000, 800000, .{});
     _ = try stack.insert(slot, sc3);
 
@@ -205,7 +205,7 @@ test "wallet manager" {
     var mgr = WalletManager.init(allocator);
     defer mgr.deinit();
 
-    const hash = [_]u8{0xAA} ** 20;
+    const hash: [20]u8 = @splat(0xAA);
     try mgr.createWallet("default", hash, .mainnet);
 
     const wallets = try mgr.listWallets(allocator);

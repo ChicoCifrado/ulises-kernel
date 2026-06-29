@@ -23,7 +23,7 @@ fn leafHash(data: []const u8) [32]u8 {
 }
 
 fn zeroHash(depth: usize, max_depth: usize) [32]u8 {
-    var z: [32]u8 = [_]u8{0} ** 32;
+    var z: [32]u8 = @splat(0);
     var d: usize = 0;
     while (d < max_depth - depth) : (d += 1) {
         z = hashPair(z, z);
@@ -128,7 +128,7 @@ pub const TopicBlockAnchor = struct {
             .block_height = block_height,
             .topic = topic,
             .tree = SparseMerkleTree.init(),
-            .root = [_]u8{0} ** 32,
+            .root = @as([32]u8, @splat(0)),
         };
     }
 
@@ -186,7 +186,7 @@ pub const TopicAnchorChain = struct {
     }
 
     pub fn addBlock(self: *Self, allocator: std.mem.Allocator, block_height: u32) !*TopicBlockAnchor {
-        const prev_id = if (self.blocks.items.len > 0) self.blocks.items[self.blocks.items.len - 1].anchor_id else [_]u8{0} ** 32;
+        const prev_id = if (self.blocks.items.len > 0) self.blocks.items[self.blocks.items.len - 1].anchor_id else @as([32]u8, @splat(0));
 
         var anchor = TopicBlockAnchor.init(block_height, self.topic);
         const anchor_id = anchor.computeAnchorId(prev_id);
@@ -256,10 +256,10 @@ test "sparse merkle tree insert and root" {
     var tree = SparseMerkleTree.init();
     defer tree.deinit(allocator);
 
-    const data = [_]u8{0xAA} ** 32;
+    const data: [32]u8 = @splat(0xAA);
     try tree.insert(allocator, 1, &data, 8);
     const root = tree.getRoot();
-    try std.testing.expect(!std.mem.eql(u8, &root, &[_]u8{0} ** 32));
+    try std.testing.expect(!std.mem.eql(u8, &root, &@as([32]u8, @splat(0))));
 }
 
 test "sparse merkle tree proof verify" {
@@ -267,7 +267,7 @@ test "sparse merkle tree proof verify" {
     var tree = SparseMerkleTree.init();
     defer tree.deinit(allocator);
 
-    const data = [_]u8{0xBB} ** 32;
+    const data: [32]u8 = @splat(0xBB);
     try tree.insert(allocator, 5, &data, 8);
     const root = tree.getRoot();
 
@@ -281,31 +281,31 @@ test "sparse merkle tree multi insert" {
     var tree = SparseMerkleTree.init();
     defer tree.deinit(allocator);
 
-    try tree.insert(allocator, 0, &[_]u8{0xAA} ** 32, 8);
-    try tree.insert(allocator, 1, &[_]u8{0xBB} ** 32, 8);
-    try tree.insert(allocator, 2, &[_]u8{0xCC} ** 32, 8);
+    try tree.insert(allocator, 0, &@as([32]u8, @splat(0xAA)), 8);
+    try tree.insert(allocator, 1, &@as([32]u8, @splat(0xBB)), 8);
+    try tree.insert(allocator, 2, &@as([32]u8, @splat(0xCC)), 8);
 
     const root = tree.getRoot();
-    try std.testing.expect(!std.mem.eql(u8, &root, &[_]u8{0} ** 32));
+    try std.testing.expect(!std.mem.eql(u8, &root, &@as([32]u8, @splat(0))));
     try std.testing.expectEqual(@as(usize, 3), tree.leaf_count);
 }
 
 test "topic block anchor admit and commit" {
     const allocator = std.testing.allocator;
-    var topic: [32]u8 = [_]u8{0} ** 32;
+    var topic: [32]u8 = @splat(0);
     @memcpy(topic[0..5], "topic");
     var tba = TopicBlockAnchor.init(800000, topic);
     defer tba.deinit(allocator);
 
-    const txid = [_]u8{0xDD} ** 32;
+    const txid: [32]u8 = @splat(0xDD);
     try tba.admit(allocator, txid);
     const root = tba.commit();
-    try std.testing.expect(!std.mem.eql(u8, &root, &[_]u8{0} ** 32));
+    try std.testing.expect(!std.mem.eql(u8, &root, &@as([32]u8, @splat(0))));
 }
 
 test "topic anchor chain add block" {
     const allocator = std.testing.allocator;
-    var topic: [32]u8 = [_]u8{0} ** 32;
+    var topic: [32]u8 = @splat(0);
     @memcpy(topic[0..5], "topic");
 
     var chain = TopicAnchorChain.init(topic);
@@ -321,7 +321,7 @@ test "topic anchor chain add block" {
 
 test "topic anchor chain anchor id chain" {
     const allocator = std.testing.allocator;
-    var topic: [32]u8 = [_]u8{0} ** 32;
+    var topic: [32]u8 = @splat(0);
     @memcpy(topic[0..2], "t1");
 
     var chain = TopicAnchorChain.init(topic);
@@ -343,7 +343,7 @@ test "merkle tree proof verify with zeros" {
     var tree = SparseMerkleTree.init();
     defer tree.deinit(allocator);
 
-    try tree.insert(allocator, 42, &[_]u8{0xAA} ** 32, 16);
+    try tree.insert(allocator, 42, &@as([32]u8, @splat(0xAA)), 16);
     const root = tree.getRoot();
 
     const proof = try tree.prove(42, 16);
@@ -355,12 +355,12 @@ test "merkle tree proof verify with zeros" {
 
 test "tba compute anchor id" {
     const allocator = std.testing.allocator;
-    const topic: [32]u8 = [_]u8{0} ** 32;
+    const topic: [32]u8 = @splat(0);
     var tba = TopicBlockAnchor.init(500000, topic);
     defer tba.deinit(allocator);
 
-    const prev = [_]u8{0xAA} ** 32;
-    const prev2 = [_]u8{0xBB} ** 32;
+    const prev: [32]u8 = @splat(0xAA);
+    const prev2: [32]u8 = @splat(0xBB);
     const id1 = tba.computeAnchorId(prev);
     const id2 = tba.computeAnchorId(prev2);
     try std.testing.expect(!std.mem.eql(u8, &id1, &id2));

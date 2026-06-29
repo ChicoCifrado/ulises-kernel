@@ -128,7 +128,7 @@ pub const Bitmap = struct {
 };
 
 test "bitmap set and check" {
-    var words = [_]u64{0} ** 4;
+    var words: [4]u64 = @splat(0);
     var bm = Bitmap.init(&words);
     try std.testing.expect(!bm.isSet(10));
     bm.set(10);
@@ -138,7 +138,7 @@ test "bitmap set and check" {
 }
 
 test "bitmap find free" {
-    var words = [_]u64{0} ** 4;
+    var words: [4]u64 = @splat(0);
     var bm = Bitmap.init(&words);
     const free = bm.findFree();
     try std.testing.expect(free != null);
@@ -149,7 +149,7 @@ test "bitmap find free" {
 }
 
 test "bitmap full word" {
-    var words = [_]u64{std.math.maxInt(u64), 0} ** 2;
+    var words: [4]u64 = .{ std.math.maxInt(u64), 0, std.math.maxInt(u64), 0 };
     var bm = Bitmap.init(words[0..2]);
     const free = bm.findFree();
     try std.testing.expect(free != null);
@@ -157,7 +157,7 @@ test "bitmap full word" {
 }
 
 test "bitmap count free" {
-    var words = [_]u64{0b1010, 0} ** 2;
+    var words: [4]u64 = .{ 0b1010, 0, 0b1010, 0 };
     var bm = Bitmap.init(words[0..2]);
     try std.testing.expectEqual(126, bm.countFree());
 }

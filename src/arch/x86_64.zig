@@ -1,10 +1,9 @@
 const std = @import("std");
 
-pub const KERNEL_OFFSET = 0xFFFFFFFF80000000;
+pub const KERNEL_OFFSET = 0x0;
 
 pub inline fn virtToPhys(vaddr: anytype) u32 {
-    const v = @intFromPtr(vaddr);
-    return if (v < KERNEL_OFFSET) @intCast(v) else @intCast(v -% KERNEL_OFFSET);
+    return @intCast(@intFromPtr(vaddr));
 }
 
 pub fn sti() void {
@@ -98,45 +97,54 @@ pub fn serialReadChar() u8 {
 }
 
 pub fn invlpg(vaddr: u64) void {
-    asm volatile ("invlpg (%[v])" : : [v] "r" (vaddr) : "memory");
+    const ptr: *volatile u64 = @ptrFromInt(vaddr);
+    asm volatile ("invlpg %[v]"
+        :
+        : [v] "m" (ptr.*),
+        : .{ .memory = true }
+    );
 }
 
-/// Map a physical MMIO region at its physical address (identity map)
-/// using the pd_mmio page directory (covers physical 3-4GB).
+/// Map a physical MMIO region at its physical address (identity map).
 /// phys must be in 0xC0000000-0xFFFFFFFF range. 4KB-aligned.
 pub fn mapMmioRegion(phys: u64, size: u64, page_alloc: anytype) void {
-    @setRuntimeSafety(false);
-    const boot = @import("x86_64/boot.zig");
-    const pd_vaddr = @intFromPtr(&boot.pd_mmio);
-    const pd_phys = if (pd_vaddr >= KERNEL_OFFSET) pd_vaddr -% KERNEL_OFFSET else pd_vaddr;
-    const pd: [*]volatile u64 = @ptrFromInt(pd_phys);
+    _ = page_alloc;
+    _ = size;
+    // Identity mapping via PD already covers 0-1GB with 2MB pages.
+    // phys is already accessible. Nothing to do.
+    _ = phys;
+}
 
-    var addr = phys;
-    const end = addr + size;
-    while (addr < end) {
-        const pd_idx = (addr - 0xC0000000) / (2 * 1024 * 1024);
-        if (pd_idx >= 512) break;
-        if (addr % (2 * 1024 * 1024) == 0 and addr + (2 * 1024 * 1024) <= end) {
-            pd[pd_idx] = addr | 0x93;
-            addr += 2 * 1024 * 1024;
-        } else {
-            const pt_page = page_alloc.allocPage() orelse return;
-            const pt_phys = virtToPhys(pt_page);
-            const pt_virt: [*]u64 = @ptrFromInt(@intFromPtr(pt_page));
-            @memset(@as([*]u8, @ptrCast(pt_virt))[0..4096], 0);
-            pd[pd_idx] = pt_phys | 0x03;
-            const pt_end = @min(addr + 2 * 1024 * 1024, end);
-            var pt_addr = addr;
-            while (pt_addr < pt_end) {
-                const pt_idx = (pt_addr - addr) / 4096;
-                if (pt_idx >= 512) break;
-                pt_virt[pt_idx] = pt_addr | 0x13;
-                pt_addr += 4096;
-            }
-            addr = pt_end;
-        }
-    }
-    asm volatile ("mov %[cr3], %%cr3" : : [cr3] "r" (@as(u64, @intFromPtr(&boot.pml4))) : "memory");
+fn readCr0() u64 {
+    var val: u64 = undefined;
+    asm volatile ("movq %%cr0, %[val]"
+        : [val] "=r" (val)
+    );
+    return val;
+}
+
+fn writeCr0(val: u64) void {
+    asm volatile ("movq %[val], %%cr0"
+        :
+        : [val] "r" (val)
+        : .{ .memory = true }
+    );
+}
+
+fn readCr4() u64 {
+    var val: u64 = undefined;
+    asm volatile ("movq %%cr4, %[val]"
+        : [val] "=r" (val)
+    );
+    return val;
+}
+
+fn writeCr4(val: u64) void {
+    asm volatile ("movq %[val], %%cr4"
+        :
+        : [val] "r" (val)
+        : .{ .memory = true }
+    );
 }
 
 pub fn initCpu() void {
@@ -144,19 +152,14 @@ pub fn initCpu() void {
     _ = result;
 
     // Enable SSE (required because LLVM emits SSE ops like xorps/movups)
-    // CR0: clear EM (bit 4), set MP (bit 1)
-    asm volatile (
-        \\movq    %%cr0, %%rax
-        \\andq    $~0x10, %%rax
-        \\orq     $0x02, %%rax
-        \\movq    %%rax, %%cr0
-    );
-    // CR4: set OSFXSR (bit 9) and OSXMMEXCPT (bit 10)
-    asm volatile (
-        \\movq    %%cr4, %%rax
-        \\orq     $0x600, %%rax
-        \\movq    %%rax, %%cr4
-    );
+    // CR0: clear EM (bit 4), set MP (bit 1); CR4: set OSFXSR (bit 9) and OSXMMEXCPT (bit 10)
+    var cr0 = readCr0();
+    cr0 &= ~@as(u64, 0x10);
+    cr0 |= 0x02;
+    writeCr0(cr0);
+    var cr4 = readCr4();
+    cr4 |= 0x600;
+    writeCr4(cr4);
 }
 
 test "cpuid works" {

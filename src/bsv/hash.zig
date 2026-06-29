@@ -178,7 +178,7 @@ test "empty string" {
 }
 
 test "long input" {
-    var buf: [1000]u8 = .{0x41} ** 1000;
+    var buf: [1000]u8 = @splat(0x41);
     const result = sha256(&buf);
     try std.testing.expectEqual(32, result.len);
 }

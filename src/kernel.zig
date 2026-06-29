@@ -1,7 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const hal = @import("hal.zig");
-const x86_64 = @import("arch/x86_64.zig");
 const utxo_stack = @import("utxo/stack.zig");
 const utxo_slot = @import("utxo/slot.zig");
 const pmm = @import("mem/pmm.zig");
@@ -22,7 +21,9 @@ const pci = @import("hal/pci.zig");
 const e1000 = @import("net/e1000.zig");
 const net_stack = @import("net/stack.zig");
 const shell = @import("shell/shell.zig");
-const smp = @import("arch/smp.zig");
+const smp = if (builtin.target.cpu.arch == .x86_64) @import("arch/smp.zig") else struct {
+    pub fn initSmp(_: anytype) void {}
+};
 const spinlock = @import("sync/spinlock.zig");
 const global_alloc = @import("mem/global.zig");
 
@@ -31,11 +32,12 @@ var nic: e1000.E1000 = undefined;
 var g_stack: net_stack.Stack = undefined;
 
 comptime {
-    if (builtin.target.cpu.arch == .x86_64 and
-        builtin.target.os.tag == .freestanding and
-        !builtin.is_test)
-    {
-        _ = @import("arch/x86_64/boot.zig");
+    if (builtin.target.os.tag == .freestanding and !builtin.is_test) {
+        switch (builtin.target.cpu.arch) {
+            .x86_64 => { _ = @import("arch/x86_64/boot.zig"); },
+            .aarch64, .arm => { _ = @import("arch/aarch64/boot.zig"); },
+            else => {},
+        }
     }
 }
 
@@ -51,7 +53,7 @@ fn logFn(
     comptime format: []const u8,
     args: anytype,
 ) void {
-    if (builtin.target.os.tag == .freestanding and builtin.target.cpu.arch == .x86_64 and !builtin.is_test) {
+    if (builtin.target.os.tag == .freestanding and !builtin.is_test) {
         const logger = @import("hal/logger.zig");
         const tag = @tagName(scope);
         const alloc = global_alloc.get();
@@ -66,7 +68,7 @@ fn logFn(
 }
 
 pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
-    if (builtin.target.os.tag == .freestanding and builtin.target.cpu.arch == .x86_64 and !builtin.is_test) {
+    if (builtin.target.os.tag == .freestanding and !builtin.is_test) {
         const logger = @import("hal/logger.zig");
         logger.panicLog(msg);
     }
@@ -74,28 +76,11 @@ pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
     h.halt(.panic);
 }
 
-pub export fn kmain() callconv(.Naked) noreturn {
-    asm volatile (
-        \\.code64
-        // Trace: kmain entered ('K')
-        \\    movb    $0x4B, %al
-        \\    movw    $0xe9, %dx
-        \\    outb    %al, %dx
-        // Align stack to 16 bytes for System V ABI before calling kmainReal
-        \\    subq    $8, %rsp
-        // Call kmainReal (use physical address since identity-mapped)
-        \\    movq    $kmainReal, %rax
-        \\    subq    $0xFFFFFFFF80000000, %rax
-        \\    call    *%rax
-        \\0:
-        \\    cli
-        \\    hlt
-        \\    jmp     0b
-    );
+pub export fn kmain() noreturn {
+    return kmainReal();
 }
 
 pub export fn kmainReal() noreturn {
-    asm volatile ("movb $0x21, %al; movw $0xe9, %dx; outb %al, %dx");
     initLogger();
     var h = hal.Hal.init();
     {
@@ -117,7 +102,9 @@ pub export fn kmainReal() noreturn {
         const log = @import("hal/logger.zig");
         log.write("[ZC]\n");
     }
-    smp.initSmp(&page_allocator);
+    if (builtin.target.cpu.arch == .x86_64) {
+        smp.initSmp(&page_allocator);
+    }
     {
         const log = @import("hal/logger.zig");
         log.write("[ZD]\n");
@@ -141,7 +128,7 @@ pub export fn kmainReal() noreturn {
         }
     }
 
-    asm volatile ("movb $0x62, %al; movw $0xe9, %dx; outb %al, %dx"); // 'b'
+    dbgWr('b');
     initBootDevices(&page_allocator);
     const UTXO_SLOTS = 1000;
     const SCRIPT_HEAP_SIZE = 64 * 1024;
@@ -168,8 +155,21 @@ pub export fn kmainReal() noreturn {
     h.halt(.shutdown);
 }
 
+const dbgWr = if (builtin.target.cpu.arch == .x86_64) struct {
+    fn f(val: u8) void {
+        const port: u16 = 0xE9;
+        asm volatile ("outb %[val], %[port]"
+            :
+            : [val] "{al}" (val),
+              [port] "{dx}" (port),
+        );
+    }
+}.f else struct {
+    fn f(_: u8) void {}
+}.f;
+
 fn initLogger() void {
-    if (builtin.target.os.tag == .freestanding and builtin.target.cpu.arch == .x86_64 and !builtin.is_test) {
+    if (builtin.target.os.tag == .freestanding and !builtin.is_test) {
         const logger = @import("hal/logger.zig");
         logger.init();
         logger.write("[KERNEL] Ulises booting\n");
@@ -179,46 +179,69 @@ fn initLogger() void {
 fn initPlatform() void {
     switch (builtin.target.cpu.arch) {
         .x86_64 => {
+            const x86_64 = @import("arch/x86_64.zig");
             x86_64.initCpu();
         },
-        .aarch64, .arm => {},
+        .aarch64, .arm => {
+            const arch = @import("arch/aarch64.zig");
+            arch.initCpu();
+        },
         .riscv64 => {},
         else => {},
     }
 }
 
 fn initInterrupts() void {
-    if (builtin.target.cpu.arch == .x86_64 and builtin.target.os.tag == .freestanding and !builtin.is_test) {
-        const idt_mod = @import("arch/x86_64/idt.zig");
-        const timer_mod = @import("arch/x86_64/timer.zig");
-        const sched = @import("sched/scheduler.zig");
-        const exc = @import("arch/x86_64/exceptions.zig");
-        const Handler = struct {
-            fn callback(frame: *const idt_mod.InterruptFrame) callconv(.C) u64 {
-                const vec = frame.vector;
-                if (vec < 32) {
-                    return exc.handler(frame);
-                }
-                if (vec == 0x20) {
-                    return sched.onTimerTick(frame);
-                }
-                return @intFromPtr(frame);
-            }
-        };
-        idt_mod.init(Handler.callback);
-        timer_mod.init(Handler.callback);
-        sched.init();
-        x86_64.sti();
+    if (builtin.target.os.tag == .freestanding and !builtin.is_test) {
+        switch (builtin.target.cpu.arch) {
+            .x86_64 => {
+                const idt_mod = @import("arch/x86_64/idt.zig");
+                const timer_mod = @import("arch/x86_64/timer.zig");
+                const sched = @import("sched/scheduler.zig");
+                const exc = @import("arch/x86_64/exceptions.zig");
+                const x86_64 = @import("arch/x86_64.zig");
+                const Handler = struct {
+                    fn callback(frame: *const idt_mod.InterruptFrame) callconv(std.lang.CallingConvention.c) u64 {
+                        const vec = frame.vector;
+                        if (vec < 32) {
+                            return exc.handler(frame);
+                        }
+                        if (vec == 0x20) {
+                            return sched.onTimerTick(frame);
+                        }
+                        return @intFromPtr(frame);
+                    }
+                };
+                idt_mod.init(Handler.callback);
+                timer_mod.init(Handler.callback);
+                sched.init();
+                x86_64.sti();
+            },
+            .aarch64, .arm => {
+                const arch = @import("arch/aarch64.zig");
+                const sched = @import("sched/scheduler.zig");
+                arch.gicInit();
+                // Enable timer PPI (INTID 30 on QEMU virt)
+                arch.gicEnableIrq(30);
+                // Enable timer at 100 Hz
+                arch.timerInit(100);
+                sched.init();
+                // Enable IRQs
+                arch.sti();
+            },
+            else => {},
+        }
     }
 }
 
 fn initBootDevices(page_allocator: *pmm.PageAllocator) void {
     if (builtin.target.cpu.arch == .x86_64) {
+        const x86_64 = @import("arch/x86_64.zig");
         {
             const log = @import("hal/logger.zig");
             log.write("[BD]\n");
         }
-        asm volatile ("movb $0x4D, %al; movw $0xe9, %dx; outb %al, %dx"); // 'M'
+        dbgWr('M');
         {
             const log = @import("hal/logger.zig");
             log.write("[MM]\n");
@@ -228,9 +251,9 @@ fn initBootDevices(page_allocator: *pmm.PageAllocator) void {
             const log = @import("hal/logger.zig");
             log.write("[mm]\n");
         }
-        asm volatile ("movb $0x6D, %al; movw $0xe9, %dx; outb %al, %dx"); // 'm'
+        dbgWr('m');
         usb.init();
-        asm volatile ("movb $0x55, %al; movw $0xe9, %dx; outb %al, %dx"); // 'U'
+        dbgWr('U');
 
         const allocator = global_alloc.get();
         const pci_devs = pci.enumerate(allocator) catch {
@@ -240,13 +263,15 @@ fn initBootDevices(page_allocator: *pmm.PageAllocator) void {
 
         for (pci_devs) |dev| {
             if (dev.class_code == 0x02 and dev.subclass == 0x00) {
-                asm volatile ("movb $0x45, %al; movw $0xe9, %dx; outb %al, %dx"); // 'E'
-                const mmio_base: [*]volatile u32 = @ptrFromInt(dev.bar0 & 0xFFFFFFF0);
+                dbgWr('E');
+                const mmio_phys = dev.bar0 & 0xFFFFFFF0;
+                x86_64.invlpg(mmio_phys);
+                const mmio_base: [*]volatile u32 = @ptrFromInt(mmio_phys);
                 nic = e1000.E1000.init(allocator, mmio_base) catch {
                     logError("e1000 init failed");
                     continue;
                 };
-                asm volatile ("movb $0x65, %al; movw $0xe9, %dx; outb %al, %dx"); // 'e'
+                dbgWr('e');
                 break;
             }
         }
@@ -259,7 +284,7 @@ fn initUtxoStack(num_slots: usize, script_heap_size: usize) !utxo_stack.UtxoStac
 }
 
 fn logError(msg: []const u8) void {
-    if (builtin.target.cpu.arch == .x86_64 and builtin.target.os.tag == .freestanding and !builtin.is_test) {
+    if (builtin.target.os.tag == .freestanding and !builtin.is_test) {
         const log = @import("hal/logger.zig");
         log.errorLog(msg);
     }

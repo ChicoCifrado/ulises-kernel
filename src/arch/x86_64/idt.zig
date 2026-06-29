@@ -1,4 +1,5 @@
 const std = @import("std");
+const c_callconv: std.lang.CallingConvention = std.lang.CallingConvention.c;
 
 pub const IdtEntry = packed struct(u128) {
     offset_low: u16,
@@ -57,45 +58,50 @@ fn hasErrorCode(vector: u8) bool {
     };
 }
 
-export var idt: [NUM_VECTORS]IdtEntry align(16) linksection(".data.idt") = [_]IdtEntry{@bitCast(@as(u128, 0))} ** NUM_VECTORS;
-export var common_handler_fn: ?*const fn (*const InterruptFrame) callconv(.C) u64 = null;
+export var idt: [NUM_VECTORS]IdtEntry align(16) linksection(".data.idt") = @splat(@bitCast(@as(u128, 0)));
+export var common_handler_fn: ?*const fn (*const InterruptFrame) callconv(c_callconv) u64 = null;
 
-export fn isrCommon() callconv(.Naked) void {
+export fn isrCommon() callconv(.naked) void {
     asm volatile (
-        \\pushq %r15
-        \\pushq %r14
-        \\pushq %r13
-        \\pushq %r12
-        \\pushq %rbp
-        \\pushq %rbx
-        \\pushq %r11
-        \\pushq %r10
-        \\pushq %r9
-        \\pushq %r8
-        \\pushq %rcx
-        \\pushq %rdx
-        \\pushq %rsi
-        \\pushq %rdi
-        \\movq %rsp, %rdi
+        \\pushq %%r15
+        \\pushq %%r14
+        \\pushq %%r13
+        \\pushq %%r12
+        \\pushq %%rbp
+        \\pushq %%rbx
+        \\pushq %%r11
+        \\pushq %%r10
+        \\pushq %%r9
+        \\pushq %%r8
+        \\pushq %%rcx
+        \\pushq %%rdx
+        \\pushq %%rsi
+        \\pushq %%rdi
+        \\movq %%rsp, %%rdi
         \\cld
-        \\callq *common_handler_fn(%rip)
-        \\movq %rax, %rsp
-        \\popq %rdi
-        \\popq %rsi
-        \\popq %rdx
-        \\popq %rcx
-        \\popq %r8
-        \\popq %r9
-        \\popq %r10
-        \\popq %r11
-        \\popq %rbx
-        \\popq %rbp
-        \\popq %r12
-        \\popq %r13
-        \\popq %r14
-        \\popq %r15
-        \\addq $16, %rsp
+        \\movq %[handler_ptr], %%r11
+        \\movq (%%r11), %%r11
+        \\callq *%%r11
+        \\movq %%rax, %%rsp
+        \\popq %%rdi
+        \\popq %%rsi
+        \\popq %%rdx
+        \\popq %%rcx
+        \\popq %%r8
+        \\popq %%r9
+        \\popq %%r10
+        \\popq %%r11
+        \\popq %%rbx
+        \\popq %%rbp
+        \\popq %%r12
+        \\popq %%r13
+        \\popq %%r14
+        \\popq %%r15
+        \\addq $16, %%rsp
         \\iretq
+        :
+        : [handler_ptr] "r" (&common_handler_fn),
+        : .{ .r11 = true, .memory = true }
     );
 }
 
@@ -104,41 +110,37 @@ export fn idtLoad() void {
         .limit = @sizeOf(@TypeOf(idt)) - 1,
         .base = @intFromPtr(&idt),
     };
-    asm volatile ("lidt (%[ptr])"
+    asm volatile ("mov %[ptr], %%rdi\n\tlidtq (%%rdi)"
         :
         : [ptr] "r" (&ptr),
-        : "memory"
+        : .{ .rdi = true, .memory = true }
     );
 }
 
-fn stubForVector(comptime vec: u8) *const fn () callconv(.Naked) void {
-    const has_err = hasErrorCode(vec);
-    const T = struct {
-        fn stub() callconv(.Naked) void {
-            if (has_err) {
-                asm volatile ("pushq %[v]\njmp isrCommon"
-                    :
-                    : [v] "n" (vec),
-                );
-            } else {
-                asm volatile ("pushq $0\npushq %[v]\njmp isrCommon"
-                    :
-                    : [v] "n" (vec),
-                );
-            }
+const stubs: [NUM_VECTORS]*const fn () callconv(.naked) void = blk: {
+    @setEvalBranchQuota(200000);
+    var result: [NUM_VECTORS]*const fn () callconv(.naked) void = undefined;
+    var tmp: [10]u8 = undefined;
+    var i: usize = 0;
+    while (i < NUM_VECTORS) : (i += 1) {
+        const vec = @as(u8, @intCast(i));
+        const has_err = hasErrorCode(vec);
+        var n = i;
+        var tpos: usize = 10;
+        while (n > 9) : (n /= 10) {
+            tpos -= 1;
+            tmp[tpos] = @as(u8, @intCast((n % 10) + '0'));
         }
-    };
-    return T.stub;
-}
-
-const stubs: [NUM_VECTORS]*const fn () callconv(.Naked) void = blk: {
-    @setEvalBranchQuota(10000);
-    var result: [NUM_VECTORS]*const fn () callconv(.Naked) void = undefined;
-    for (0..NUM_VECTORS) |i| {
-        result[i] = stubForVector(@as(u8, @intCast(i)));
+        tpos -= 1;
+        tmp[tpos] = @as(u8, @intCast(n + '0'));
+        const suffix = if (has_err) "_err" else "";
+        const name = "isrStub" ++ tmp[tpos..10] ++ suffix;
+        result[i] = @extern(*const fn () callconv(.naked) void, .{ .name = name });
     }
     break :blk result;
 };
+
+
 
 pub fn picDisable() void {
     const x86_64 = @import("../x86_64.zig");
@@ -146,7 +148,7 @@ pub fn picDisable() void {
     x86_64.outb(0xA1, 0xFF);
 }
 
-pub fn init(callback: *const fn (*const InterruptFrame) callconv(.C) u64) void {
+pub fn init(callback: *const fn (*const InterruptFrame) callconv(c_callconv) u64) void {
     common_handler_fn = callback;
     for (0..NUM_VECTORS) |i| {
         const handler_addr = @intFromPtr(stubs[i]);

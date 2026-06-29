@@ -82,8 +82,8 @@ pub fn buildBeef(tx_raw: []const u8, parents: []const []const u8, allocator: std
 
 test "beef encode decode roundtrip" {
     const allocator = std.testing.allocator;
-    const tx1 = [_]u8{0x01} ** 100;
-    const tx2 = [_]u8{0x02} ** 200;
+    const tx1: [100]u8 = @splat(0x01);
+    const tx2: [200]u8 = @splat(0x02);
 
     var txs: [2]BeefTx = .{
         .{ .txid = hash.doubleSha256(&tx1), .raw = &tx1 },
@@ -102,8 +102,8 @@ test "beef encode decode roundtrip" {
 
 test "beef top tx" {
     const allocator = std.testing.allocator;
-    const tx1 = [_]u8{0xAA} ** 50;
-    const tx2 = [_]u8{0xBB} ** 75;
+    const tx1: [50]u8 = @splat(0xAA);
+    const tx2: [75]u8 = @splat(0xBB);
 
     var txs: [2]BeefTx = .{
         .{ .txid = hash.doubleSha256(&tx1), .raw = &tx1 },
@@ -121,7 +121,7 @@ test "beef top tx" {
 
 test "beef single tx" {
     const allocator = std.testing.allocator;
-    const tx = [_]u8{0xCC} ** 64;
+    const tx: [64]u8 = @splat(0xCC);
 
     var txs: [1]BeefTx = .{
         .{ .txid = hash.doubleSha256(&tx), .raw = &tx },
@@ -138,9 +138,9 @@ test "beef single tx" {
 
 test "build beef" {
     const allocator = std.testing.allocator;
-    const tx = [_]u8{0xDD} ** 80;
-    const parent1 = [_]u8{0xEE} ** 120;
-    const parent2 = [_]u8{0xFF} ** 160;
+    const tx: [80]u8 = @splat(0xDD);
+    const parent1: [120]u8 = @splat(0xEE);
+    const parent2: [160]u8 = @splat(0xFF);
 
     const beef = try buildBeef(&tx, &.{ &parent1, &parent2 }, allocator);
     defer allocator.free(beef);

@@ -1,8 +1,15 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const x86_64 = @import("../arch/x86_64.zig");
 
-const virtToPhys = x86_64.virtToPhys;
+const virtToPhys = if (builtin.target.cpu.arch == .x86_64) struct {
+    fn f(vaddr: anytype) u32 {
+        return @import("../arch/x86_64.zig").virtToPhys(vaddr);
+    }
+}.f else struct {
+    fn f(vaddr: anytype) u32 {
+        return @truncate(@intFromPtr(vaddr));
+    }
+}.f;
 
 const E1000_NUM_RX_DESC = 32;
 const E1000_NUM_TX_DESC = 32;

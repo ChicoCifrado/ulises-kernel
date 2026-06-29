@@ -172,7 +172,7 @@ pub fn decodeVarInt(data: []const u8) struct { value: usize, consumed: usize } {
 }
 
 test "outpoint serialize roundtrip" {
-    const op = OutPoint{ .txid = [_]u8{0xAA} ** 32, .vout = 42 };
+    const op = OutPoint{ .txid = @as([32]u8, @splat(0xAA)), .vout = 42 };
     const ser = op.serialize();
     const de = OutPoint.deserialize(ser);
     try std.testing.expect(op.eql(de));

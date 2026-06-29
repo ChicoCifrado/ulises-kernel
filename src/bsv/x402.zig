@@ -134,8 +134,8 @@ test "payment request serialize roundtrip" {
     const allocator = std.testing.allocator;
     const req = PaymentRequest{
         .version = .v1,
-        .derivation_prefix = [_]u8{0xAA} ** 32,
-        .derivation_suffix = [_]u8{0xBB} ** 32,
+        .derivation_prefix = @as([32]u8, @splat(0xAA)),
+        .derivation_suffix = @as([32]u8, @splat(0xBB)),
         .amount = 10000,
         .description = "test payment",
     };
@@ -167,8 +167,8 @@ test "payment request with no description" {
     const allocator = std.testing.allocator;
     const req = PaymentRequest{
         .version = .v1,
-        .derivation_prefix = [_]u8{0x01} ** 32,
-        .derivation_suffix = [_]u8{0x02} ** 32,
+        .derivation_prefix = @as([32]u8, @splat(0x01)),
+        .derivation_suffix = @as([32]u8, @splat(0x02)),
         .amount = 50000,
         .description = null,
     };
@@ -182,8 +182,8 @@ test "payment request with no description" {
 test "payment template" {
     const tmpl = PaymentTemplate{
         .amount = 1000,
-        .derivation_prefix = [_]u8{0xCC} ** 32,
-        .derivation_suffix = [_]u8{0xDD} ** 32,
+        .derivation_prefix = @as([32]u8, @splat(0xCC)),
+        .derivation_suffix = @as([32]u8, @splat(0xDD)),
         .description = "article access",
     };
     try std.testing.expectEqual(@as(u64, 1000), tmpl.amount);
@@ -191,7 +191,7 @@ test "payment template" {
 
 test "settlement proof" {
     const proof = SettlementProof{
-        .payment_txid = [_]u8{0xFF} ** 32,
+        .payment_txid = @as([32]u8, @splat(0xFF)),
         .merkle_proof = &[_]u8{},
         .block_height = 800000,
     };

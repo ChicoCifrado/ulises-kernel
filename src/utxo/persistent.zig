@@ -199,7 +199,7 @@ test "persistent utxo open and insert" {
     var p = try PersistentUtxo.open(tmp_path, 1024, 65536, allocator);
     defer p.close();
 
-    const txid = [_]u8{0xAA} ** 32;
+    const txid: [32]u8 = @splat(0xAA);
     const slot = Slot.init(txid, 0, 100000, 800000, .{});
     const idx = try p.insert(slot, &.{0x76, 0xa9, 0x14, 0x88, 0xac});
     try std.testing.expectEqual(@as(usize, 0), idx);

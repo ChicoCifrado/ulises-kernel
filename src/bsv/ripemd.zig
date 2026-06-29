@@ -195,7 +195,7 @@ test "ripemd160 abc" {
 
 test "ripemd160 long" {
     var ctx = Ripemd160.init(.{});
-    var buf: [100]u8 = .{0x61} ** 100;
+    var buf: [100]u8 = @splat(0x61);
     ctx.update(&buf);
     const result = ctx.final();
     try std.testing.expectEqual(20, result.len);

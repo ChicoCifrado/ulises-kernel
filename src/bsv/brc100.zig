@@ -196,7 +196,7 @@ pub const KernelWallet = struct {
 
         const out_count = primitives.decodeVarInt(raw_tx[offset..]);
         offset += out_count.consumed;
-        var txid: [32]u8 = [_]u8{0} ** 32;
+        var txid: [32]u8 = @splat(0);
         txid = hash.sha256(raw_tx);
 
         for (0..out_count.value) |i| {
@@ -377,7 +377,7 @@ test "kernel wallet create wallet and balance" {
     var kw = KernelWallet.init(allocator, &stack);
     defer kw.deinit();
 
-    const pubkey_hash = [_]u8{0xAA} ** 20;
+    const pubkey_hash: [20]u8 = @splat(0xAA);
     try kw.createWallet("default", pubkey_hash);
     kw.setActiveWallet("default");
     _ = try kw.getBasketBalance(null);
@@ -417,7 +417,7 @@ test "kernel wallet create action" {
     var kw = KernelWallet.init(allocator, &stack);
     defer kw.deinit();
 
-    const pubkey_hash2 = [_]u8{0xAA} ** 20;
+    const pubkey_hash2: [20]u8 = @splat(0xAA);
     try kw.createWallet("default", pubkey_hash2);
     kw.setActiveWallet("default");
 
@@ -442,7 +442,7 @@ test "kernel wallet sign hash" {
     var kw = KernelWallet.init(allocator, &stack);
     defer kw.deinit();
 
-    const priv: [32]u8 = [_]u8{0xAA} ** 32;
+    const priv: [32]u8 = @splat(0xAA);
     const msg: [32]u8 = hash.sha256("test message");
     const sig = kw.signHash(msg, priv);
     const pubkey = kw.getPubkey(priv);
@@ -457,7 +457,7 @@ test "kernel wallet sign sighash" {
     var kw = KernelWallet.init(allocator, &stack);
     defer kw.deinit();
 
-    const priv: [32]u8 = [_]u8{0xBB} ** 32;
+    const priv: [32]u8 = @splat(0xBB);
     const raw_tx: [10]u8 = [_]u8{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0A};
     const sig65 = try kw.signSighash(&raw_tx, priv);
     try std.testing.expectEqual(65, sig65.len);

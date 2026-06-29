@@ -912,9 +912,9 @@ test "vm checkdatasig" {
     var vm = Vm.init(allocator);
     defer vm.deinit();
 
-    const priv: [32]u8 = [_]u8{0x01} ** 32;
+    const priv: [32]u8 = @splat(0x01);
     const pubkey = secp.pubkeyCreate(priv);
-    const msg = "hello" ** 8;
+    const msg = "hello" ++ "hello" ++ "hello" ++ "hello" ++ "hello" ++ "hello" ++ "hello" ++ "hello";
     const msg_hash = hash.sha256(msg);
     const sig = secp.sign(msg_hash, priv);
 
@@ -937,7 +937,7 @@ test "vm checkdatasig verify fails" {
     var vm = Vm.init(allocator);
     defer vm.deinit();
 
-    const priv: [32]u8 = [_]u8{0x01} ** 32;
+    const priv: [32]u8 = @splat(0x01);
     const pubkey = secp.pubkeyCreate(priv);
     const msg = "good message";
     const wrong_msg = "bad message";
@@ -963,7 +963,7 @@ test "vm checksig" {
     var vm = Vm.init(allocator);
     defer vm.deinit();
 
-    const priv: [32]u8 = [_]u8{0x01} ** 32;
+    const priv: [32]u8 = @splat(0x01);
     const pubkey = secp.pubkeyCreate(priv);
     const msg_hash = hash.sha256(&pubkey);
     const sig = secp.sign(msg_hash, priv);

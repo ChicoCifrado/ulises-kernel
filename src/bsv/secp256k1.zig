@@ -24,7 +24,7 @@ const Fe = [8]u32;
 const Sc = [8]u32;
 
 fn feZero() Fe {
-    return [_]u32{0} ** 8;
+    return @as(Fe, @splat(0));
 }
 
 fn feIsZero(a: Fe) bool {
@@ -38,7 +38,7 @@ fn feEq(a: Fe, b: Fe) bool {
 }
 
 fn feOne() Fe {
-    var r: Fe = [_]u32{0} ** 8;
+    var r: Fe = @splat(0);
     r[0] = 1;
     return r;
 }
@@ -79,7 +79,7 @@ fn feGte(a: Fe, b: Fe) bool {
 
 fn feMul(a: Fe, b: Fe) Fe {
     @setRuntimeSafety(false);
-    var t: [16]u64 = [_]u64{0} ** 16;
+    var t: [16]u64 = @splat(0);
     for (0..8) |i| {
         var carry: u64 = 0;
         for (0..8) |j| {
@@ -163,11 +163,11 @@ fn feToBytes(a: Fe) [32]u8 {
 }
 
 fn scZero() Sc {
-    return [_]u32{0} ** 8;
+    return @as([8]u32, @splat(0));
 }
 
 fn scOne() Sc {
-    var r: Sc = [_]u32{0} ** 8;
+    var r: Sc = @splat(0);
     r[0] = 1;
     return r;
 }
@@ -218,7 +218,7 @@ fn scSub(a: Sc, b: Sc) Sc {
 
 fn scMul(a: Sc, b: Sc) Sc {
     @setRuntimeSafety(false);
-    var t: [16]u64 = [_]u64{0} ** 16;
+    var t: [16]u64 = @splat(0);
     for (0..8) |i| {
         var carry: u64 = 0;
         for (0..8) |j| {
@@ -486,16 +486,16 @@ pub const secp256k1 = struct {
     }
 
     pub fn ecdh(priv: [32]u8, pubkey: [33]u8) [32]u8 {
-        const p = geFromBytes(pubkey) orelse return [_]u8{0} ** 32;
-        if (p.infinity) return [_]u8{0} ** 32;
+        const p = geFromBytes(pubkey) orelse return @as([32]u8, @splat(0));
+        if (p.infinity) return @as([32]u8, @splat(0));
         const scalar = scFromBytes(priv);
         const result = gejToGe(gejMul(gejFromGe(p), scalar));
-        if (result.infinity) return [_]u8{0} ** 32;
+        if (result.infinity) return @as([32]u8, @splat(0));
         return feToBytes(result.x);
     }
 
     pub fn deriveChildPubkey(parent_pub: [33]u8, scalar: [32]u8) [33]u8 {
-        const p = geFromBytes(parent_pub) orelse return [_]u8{0} ** 33;
+        const p = geFromBytes(parent_pub) orelse return @as([33]u8, @splat(0));
         const s = scFromBytes(scalar);
         const g = Ge{ .x = GX, .y = GY, .infinity = false };
         const offset = gejToGe(gejMul(gejFromGe(g), s));
@@ -586,14 +586,14 @@ test "sc inv then mul" {
 }
 
 test "pubkey create" {
-    const priv: [32]u8 = [_]u8{0x01} ** 32;
+    const priv: [32]u8 = @splat(0x01);
     const pk = secp256k1.pubkeyCreate(priv);
     try std.testing.expectEqual(33, pk.len);
     try std.testing.expect(pk[0] == 0x02 or pk[0] == 0x03);
 }
 
 test "sign and verify" {
-    const priv_bytes: [32]u8 = [_]u8{0x01} ** 32;
+    const priv_bytes: [32]u8 = @splat(0x01);
     const pk_bytes = secp256k1.pubkeyCreate(priv_bytes);
     const msg: [32]u8 = hash.sha256("hello");
 
@@ -603,7 +603,7 @@ test "sign and verify" {
 }
 
 test "verify wrong sig fails" {
-    const priv_bytes: [32]u8 = [_]u8{0x01} ** 32;
+    const priv_bytes: [32]u8 = @splat(0x01);
     const pk_bytes = secp256k1.pubkeyCreate(priv_bytes);
     const msg: [32]u8 = hash.sha256("hello");
     const wrong_msg: [32]u8 = hash.sha256("world");
@@ -614,8 +614,8 @@ test "verify wrong sig fails" {
 }
 
 test "ecdh shared secret" {
-    const alice_priv_bytes: [32]u8 = [_]u8{0xAA} ** 32;
-    const bob_priv_bytes: [32]u8 = [_]u8{0xBB} ** 32;
+    const alice_priv_bytes: [32]u8 = @splat(0xAA);
+    const bob_priv_bytes: [32]u8 = @splat(0xBB);
 
     const alice_pk = secp256k1.pubkeyCreate(alice_priv_bytes);
     const bob_pk = secp256k1.pubkeyCreate(bob_priv_bytes);
@@ -627,7 +627,7 @@ test "ecdh shared secret" {
 }
 
 test "derive child pubkey" {
-    const parent_priv_bytes: [32]u8 = [_]u8{0x01} ** 32;
+    const parent_priv_bytes: [32]u8 = @splat(0x01);
     const parent_pk = secp256k1.pubkeyCreate(parent_priv_bytes);
     const scalar_bytes: [32]u8 = hash.sha256("derive");
 
@@ -636,7 +636,7 @@ test "derive child pubkey" {
 }
 
 test "pubkey from bytes" {
-    const priv_bytes: [32]u8 = [_]u8{0x01} ** 32;
+    const priv_bytes: [32]u8 = @splat(0x01);
     const pubkey_bytes = secp256k1.pubkeyCreate(priv_bytes);
     const parsed = secp256k1.pubkeyFromBytes(pubkey_bytes);
     try std.testing.expect(parsed != null);

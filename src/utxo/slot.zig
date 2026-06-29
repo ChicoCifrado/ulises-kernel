@@ -61,7 +61,7 @@ test "slot size is exactly 64 bytes" {
 }
 
 test "slot init and access" {
-    const txid = [_]u8{0xAA} ** 32;
+    const txid: [32]u8 = @splat(0xAA);
     var slot = Slot.init(txid, 1, 100000, 800000, .{});
     try std.testing.expectEqual(1, slot.vout);
     try std.testing.expectEqual(100000, slot.value);
@@ -70,7 +70,7 @@ test "slot init and access" {
 }
 
 test "slot mark spent" {
-    const txid = [_]u8{0xBB} ** 32;
+    const txid: [32]u8 = @splat(0xBB);
     var slot = Slot.init(txid, 0, 5000, 700000, .{});
     try std.testing.expect(!slot.isSpent());
     slot.markSpent();
@@ -78,7 +78,7 @@ test "slot mark spent" {
 }
 
 test "slot outpoint serialization" {
-    const txid = [_]u8{0xCC} ** 32;
+    const txid: [32]u8 = @splat(0xCC);
     var slot = Slot.init(txid, 42, 0, 0, .{});
     const op = slot.outpoint();
     try std.testing.expectEqual(36, op.len);

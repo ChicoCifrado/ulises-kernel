@@ -8,7 +8,7 @@ const TICK_HZ = 100;
 
 export var timer_ticks: u64 = 0;
 
-pub fn init(callback: *const fn (*const idt_mod.InterruptFrame) callconv(.C) u64) void {
+pub fn init(callback: *const fn (*const idt_mod.InterruptFrame) callconv(std.lang.CallingConvention.c) u64) void {
     _ = callback;
     const divisor: u16 = @intCast(PIT_BASE_FREQ / TICK_HZ);
     x86_64.outb(0x43, 0x34);

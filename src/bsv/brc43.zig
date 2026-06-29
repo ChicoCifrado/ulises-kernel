@@ -12,24 +12,24 @@ pub const ProtocolId = struct {
     value: [32]u8,
 
     pub fn fromSlice(slice: []const u8) ProtocolId {
-        var value: [32]u8 = [_]u8{0} ** 32;
+        var value: [32]u8 = @splat(0);
         const copy_len = @min(slice.len, 32);
         @memcpy(value[0..copy_len], slice[0..copy_len]);
         return .{ .protocol_type = .custom, .value = value };
     }
 
     pub fn fromType(key_type: u8) ProtocolId {
-        var value: [32]u8 = [_]u8{0} ** 32;
+        var value: [32]u8 = @splat(0);
         value[0] = key_type;
         return .{ .protocol_type = .key_type, .value = value };
     }
 
     pub fn self() ProtocolId {
-        return .{ .protocol_type = .self, .value = [_]u8{0} ** 32 };
+        return .{ .protocol_type = .self, .value = @as([32]u8, @splat(0)) };
     }
 
     pub fn default() ProtocolId {
-        return .{ .protocol_type = .default, .value = [_]u8{0} ** 32 };
+        return .{ .protocol_type = .default, .value = @as([32]u8, @splat(0)) };
     }
 
     pub fn eql(a: ProtocolId, b: ProtocolId) bool {
@@ -118,8 +118,8 @@ test "security level" {
 }
 
 test "counterparty equality" {
-    const key_a = [_]u8{0xAA} ** 33;
-    const key_b = [_]u8{0xBB} ** 33;
+    const key_a: [33]u8 = @splat(0xAA);
+    const key_b: [33]u8 = @splat(0xBB);
     const cp1 = Counterparty{ .identity_key = key_a, .encryption_key = null };
     const cp2 = Counterparty{ .identity_key = key_a, .encryption_key = null };
     const cp3 = Counterparty{ .identity_key = key_b, .encryption_key = null };

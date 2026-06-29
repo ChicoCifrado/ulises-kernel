@@ -2,9 +2,17 @@ const std = @import("std");
 const builtin = @import("builtin");
 const pci = @import("pci.zig");
 const global_alloc = @import("../mem/global.zig");
-const x86_64 = @import("../arch/x86_64.zig");
 
-const virtToPhys = x86_64.virtToPhys;
+fn getArch() type {
+    return switch (builtin.target.cpu.arch) {
+        .x86_64 => @import("../arch/x86_64.zig"),
+        .aarch64, .arm => @import("../arch/aarch64.zig"),
+        else => @compileError("unsupported arch"),
+    };
+}
+
+const arch = getArch();
+const virtToPhys = arch.virtToPhys;
 
 const UHCI_FRAMELIST_SIZE = 1024;
 const UHCI_TD_ALIGN = 16;
@@ -136,9 +144,9 @@ const UsbInterfaceDesc = packed struct {
 
 var kb_state: struct {
     modifiers: u8 = 0,
-    keys: [6]u8 = [_]u8{0} ** 6,
+    keys: [6]u8 = @splat(0),
     prev_modifiers: u8 = 0,
-    prev_keys: [6]u8 = [_]u8{0} ** 6,
+    prev_keys: [6]u8 = @splat(0),
     shift: bool = false,
     ctrl: bool = false,
     alt: bool = false,
@@ -147,69 +155,101 @@ var kb_state: struct {
     initialized: bool = false,
 } = .{};
 
-fn inb(port: u16) u8 {
-    var val: u8 = undefined;
-    asm volatile ("inb %[port], %[val]"
-        : [val] "={al}" (val),
-        : [port] "{dx}" (port),
-    );
-    return val;
-}
+const inb = if (builtin.target.cpu.arch == .x86_64) struct {
+    fn f(port: u16) u8 {
+        var val: u8 = undefined;
+        asm volatile ("inb %[port], %[val]"
+            : [val] "={al}" (val),
+            : [port] "{dx}" (port),
+        );
+        return val;
+    }
+}.f else struct {
+    fn f(_: u16) u8 { return 0; }
+}.f;
 
-fn outb(port: u16, val: u8) void {
-    asm volatile ("outb %[val], %[port]"
-        :
-        : [val] "{al}" (val),
-          [port] "{dx}" (port),
-    );
-}
+const outb = if (builtin.target.cpu.arch == .x86_64) struct {
+    fn f(port: u16, val: u8) void {
+        asm volatile ("outb %[val], %[port]"
+            :
+            : [val] "{al}" (val),
+              [port] "{dx}" (port),
+        );
+    }
+}.f else struct {
+    fn f(_: u16, _: u8) void {}
+}.f;
 
-fn inw(port: u16) u16 {
-    var val: u16 = undefined;
-    asm volatile ("inw %[port], %[val]"
-        : [val] "={ax}" (val),
-        : [port] "{dx}" (port),
-    );
-    return val;
-}
+const inw = if (builtin.target.cpu.arch == .x86_64) struct {
+    fn f(port: u16) u16 {
+        var val: u16 = undefined;
+        asm volatile ("inw %[port], %[val]"
+            : [val] "={ax}" (val),
+            : [port] "{dx}" (port),
+        );
+        return val;
+    }
+}.f else struct {
+    fn f(_: u16) u16 { return 0; }
+}.f;
 
-fn outw(port: u16, val: u16) void {
-    asm volatile ("outw %[val], %[port]"
-        :
-        : [val] "{ax}" (val),
-          [port] "{dx}" (port),
-    );
-}
+const outw = if (builtin.target.cpu.arch == .x86_64) struct {
+    fn f(port: u16, val: u16) void {
+        asm volatile ("outw %[val], %[port]"
+            :
+            : [val] "{ax}" (val),
+              [port] "{dx}" (port),
+        );
+    }
+}.f else struct {
+    fn f(_: u16, _: u16) void {}
+}.f;
 
-fn inl(port: u16) u32 {
-    var val: u32 = undefined;
-    asm volatile ("inl %[port], %[val]"
-        : [val] "={eax}" (val),
-        : [port] "{dx}" (port),
-    );
-    return val;
-}
+const inl = if (builtin.target.cpu.arch == .x86_64) struct {
+    fn f(port: u16) u32 {
+        var val: u32 = undefined;
+        asm volatile ("inl %[port], %[val]"
+            : [val] "={eax}" (val),
+            : [port] "{dx}" (port),
+        );
+        return val;
+    }
+}.f else struct {
+    fn f(_: u16) u32 { return 0; }
+}.f;
 
-fn outl(port: u16, val: u32) void {
-    asm volatile ("outl %[val], %[port]"
-        :
-        : [val] "{eax}" (val),
-          [port] "{dx}" (port),
-    );
-}
+const outl = if (builtin.target.cpu.arch == .x86_64) struct {
+    fn f(port: u16, val: u32) void {
+        asm volatile ("outl %[val], %[port]"
+            :
+            : [val] "{eax}" (val),
+              [port] "{dx}" (port),
+        );
+    }
+}.f else struct {
+    fn f(_: u16, _: u32) void {}
+}.f;
+
+const pause = if (builtin.target.cpu.arch == .x86_64) struct {
+    fn f() void {
+        asm volatile ("pause");
+    }
+}.f else struct {
+    fn f() void {}
+}.f;
 
 fn delayMs(ms: u32) void {
     var i: u32 = 0;
     while (i < ms * 50000) {
-        asm volatile ("pause");
+        pause();
         i += 1;
     }
 }
 
 var uhci_io_base: u16 = 0;
-var framelist: [UHCI_FRAMELIST_SIZE]u32 align(4096) = [_]u32{0} ** UHCI_FRAMELIST_SIZE;
-var td_buf: [2048]u8 align(16) = [_]u8{0} ** 2048;
-var qh_buf: [512]u8 align(16) = [_]u8{0} ** 512;
+var framelist: [UHCI_FRAMELIST_SIZE]u32 align(4096) = @splat(0);
+var td_buf: [2048]u8 align(16) = @splat(0);
+var qh_buf: [512]u8 align(16) = @splat(0);
 var td_pool_idx: usize = 0;
 var qh_pool_idx: usize = 0;
 
@@ -388,7 +428,7 @@ fn waitTdComplete(td: *Td) bool {
         if (td.token & TD_TOKEN_ACTIVE == 0) {
             return td.token & (TD_TOKEN_STALLED | TD_TOKEN_BABBLE | TD_TOKEN_ERR) == 0;
         }
-        asm volatile ("pause");
+        pause();
         tries += 1;
     }
     return false;
@@ -516,7 +556,7 @@ fn parseInterfaceDesc(data: []const u8) ?struct { iface: UsbInterfaceDesc, endp:
 }
 
 const HID_KEYBOARD_QUEUE_SIZE = 32;
-var key_queue: [HID_KEYBOARD_QUEUE_SIZE]u8 = [_]u8{0} ** HID_KEYBOARD_QUEUE_SIZE;
+var key_queue: [HID_KEYBOARD_QUEUE_SIZE]u8 = @splat(0);
 var key_queue_head: usize = 0;
 var key_queue_tail: usize = 0;
 var keyboard_dev_addr: u8 = 0;
@@ -525,7 +565,7 @@ var keyboard_interval: u8 = 0;
 
 var interrupt_td: *Td = undefined;
 var interrupt_qh: *Qh = undefined;
-var report_buf: [8]u8 = [_]u8{0} ** 8;
+var report_buf: [8]u8 = @splat(0);
 
 fn tryEnumerateKeyboard(port: u8) bool {
     uhciPortReset(port);

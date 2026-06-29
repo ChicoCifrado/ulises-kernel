@@ -25,7 +25,7 @@ pub const UtxoStack = struct {
     pub fn init(allocator: std.mem.Allocator, num_slots: usize, script_heap_size: usize) !UtxoStack {
         const alignment = 64;
         const slot_bytes = num_slots * @sizeOf(Slot);
-        const slot_mem = try allocator.alignedAlloc(u8, alignment, slot_bytes);
+        const slot_mem = try allocator.alignedAlloc(u8, std.mem.Alignment.fromByteUnits(alignment), slot_bytes);
         @memset(slot_mem, 0);
 
         const bitmap_words_len = (num_slots + 63) / 64;
@@ -92,7 +92,7 @@ pub const UtxoStack = struct {
         if (!self.bitmap.isSet(idx)) return Error.SlotNotFound;
 
         const slot = self.slots[idx];
-        self.slots[idx] = Slot.init([_]u8{0} ** 32, 0, 0, 0, .{});
+        self.slots[idx] = Slot.init(@as([32]u8, @splat(0)), 0, 0, 0, .{});
         self.bitmap.unset(idx);
         self.count -= 1;
         return slot;
@@ -184,7 +184,7 @@ test "insert and get slot" {
     var stack = try UtxoStack.init(allocator, 1024, 65536);
     defer stack.deinit();
 
-    const txid = [_]u8{0xAA} ** 32;
+    const txid: [32]u8 = @splat(0xAA);
     const slot = Slot.init(txid, 0, 10000, 800000, .{});
     const idx = try stack.insert(slot, &.{0x76, 0xa9, 0x14, 0x88, 0xac});
 
@@ -201,7 +201,7 @@ test "spend slot" {
     var stack = try UtxoStack.init(allocator, 1024, 65536);
     defer stack.deinit();
 
-    const txid = [_]u8{0xBB} ** 32;
+    const txid: [32]u8 = @splat(0xBB);
     const slot = Slot.init(txid, 1, 50000, 700000, .{});
     const idx = try stack.insert(slot, &.{});
 
@@ -215,7 +215,7 @@ test "find slot by outpoint" {
     var stack = try UtxoStack.init(allocator, 1024, 65536);
     defer stack.deinit();
 
-    const txid = [_]u8{0xCC} ** 32;
+    const txid: [32]u8 = @splat(0xCC);
     _ = try stack.insert(Slot.init(txid, 0, 1, 1, .{}), &.{});
     _ = try stack.insert(Slot.init(txid, 1, 2, 1, .{}), &.{});
 
@@ -230,7 +230,7 @@ test "remove slot" {
     var stack = try UtxoStack.init(allocator, 1024, 65536);
     defer stack.deinit();
 
-    const txid = [_]u8{0xDD} ** 32;
+    const txid: [32]u8 = @splat(0xDD);
     const idx = try stack.insert(Slot.init(txid, 0, 999, 500000, .{}), &.{0x6a});
     try std.testing.expectEqual(1, stack.count);
 
@@ -244,7 +244,7 @@ test "out of slots" {
     var stack = try UtxoStack.init(allocator, 2, 1024);
     defer stack.deinit();
 
-    const txid = [_]u8{0xEE} ** 32;
+    const txid: [32]u8 = @splat(0xEE);
     _ = try stack.insert(Slot.init(txid, 0, 1, 1, .{}), &.{});
     _ = try stack.insert(Slot.init(txid, 1, 2, 1, .{}), &.{});
     try std.testing.expectError(Error.OutOfSlots, stack.insert(Slot.init(txid, 2, 3, 1, .{}), &.{}));
@@ -256,7 +256,7 @@ test "utilization" {
     defer stack.deinit();
 
     try std.testing.expectEqual(0, stack.utilization());
-    const txid = [_]u8{0xFF} ** 32;
+    const txid: [32]u8 = @splat(0xFF);
     _ = try stack.insert(Slot.init(txid, 0, 1, 1, .{}), &.{});
     try std.testing.expectEqual(@as(f64, 0.01), stack.utilization());
 }

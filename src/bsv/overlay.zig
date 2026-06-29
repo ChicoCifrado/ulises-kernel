@@ -23,7 +23,7 @@ pub const TopicManager = struct {
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator, name: []const u8) !Self {
-        var topic_id: TopicId = [_]u8{0} ** 32;
+        var topic_id: TopicId = @splat(0);
         const name_hash = hash.sha256(name);
         @memcpy(&topic_id, &name_hash);
         return .{
@@ -136,7 +136,7 @@ pub const OverlayNode = struct {
 
     pub fn processSlapSubmit(self: *Self, msg: SlapMessage) !void {
         const mgr = self.topic_managers.getPtr(@as([]const u8, @ptrCast(&msg.topic))) orelse return error.UnknownTopic;
-        var txid: [32]u8 = [_]u8{0} ** 32;
+        var txid: [32]u8 = @splat(0);
         if (msg.payload.len >= 32) {
             @memcpy(&txid, msg.payload[0..32]);
         }
@@ -168,7 +168,7 @@ pub const PeerInfo = struct {
 };
 
 pub fn computeTopicId(name: []const u8) TopicId {
-    var id: TopicId = [_]u8{0} ** 32;
+    var id: TopicId = @splat(0);
     const name_hash = hash.sha256(name);
     @memcpy(&id, &name_hash);
     return id;
@@ -186,7 +186,7 @@ test "topic manager admit tx" {
     var mgr = try TopicManager.init(allocator, "payments");
     defer mgr.deinit();
 
-    const txid = [_]u8{0xAA} ** 32;
+    const txid: [32]u8 = @splat(0xAA);
     try mgr.admitTx(txid);
     try mgr.syncToHeight(100);
     try std.testing.expect(mgr.latestAnchor() != null);
@@ -222,7 +222,7 @@ test "overlay node process slap submit" {
     const msg = SlapMessage{
         .kind = .submit,
         .topic = topic_id,
-        .payload = &([_]u8{0xDD} ** 32 ++ [_]u8{0x00}),
+        .payload = &(@as([32]u8, @splat(0xDD)) ++ [_]u8{0x00}),
     };
     try node.processSlapSubmit(msg);
 }
@@ -233,7 +233,7 @@ test "overlay node peer management" {
     defer node.deinit();
 
     try node.addPeer(.{
-        .id = [_]u8{0xAA} ** 32,
+        .id = @as([32]u8, @splat(0xAA)),
         .address = "127.0.0.1",
         .port = 8333,
         .topics = &.{},

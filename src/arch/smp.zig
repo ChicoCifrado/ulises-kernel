@@ -58,8 +58,8 @@ pub const PerCpu = extern struct {
     stack_base: u64,
     lapic_base: u64,
     state: CpuState,
-    _pad: [3]u8 = [_]u8{0} ** 3,
-    _rsvd: [36]u8 = [_]u8{0} ** 36,
+    _pad: [3]u8 = @splat(0),
+    _rsvd: [36]u8 = @splat(0),
 };
 
 comptime {

@@ -146,12 +146,12 @@ test "derive child uses sha256" {
     const ecdh_fn = struct {
         fn f(_: [32]u8, pub_: [33]u8) [32]u8 {
             _ = pub_;
-            return [_]u8{0xAB} ** 32;
+            return @as([32]u8, @splat(0xAB));
         }
     }.f;
 
-    const parent_priv = [_]u8{0x01} ** 32;
-    const parent_pub = [_]u8{0x02} ** 32 ++ [_]u8{0x03};
+    const parent_priv: [32]u8 = @splat(0x01);
+    const parent_pub = @as([32]u8, @splat(0x02)) ++ [_]u8{0x03};
     const inv = InvoiceNo{ .sender_intent = .direct, .key_type = .identity_key, .key_id = 0, .counter = 0 };
     const result = KeyDerivation.deriveChild(parent_priv, parent_pub, inv, ecdh_fn);
     try std.testing.expectEqual(32, result.priv.len);
@@ -162,13 +162,13 @@ test "ecdh identity" {
     const ecdh_fn = struct {
         fn f(_: [32]u8, pub_: [33]u8) [32]u8 {
             _ = pub_;
-            return [_]u8{0xCD} ** 32;
+            return @as([32]u8, @splat(0xCD));
         }
     }.f;
 
     const id = EcdhIdentity{
-        .priv = [_]u8{0xAA} ** 32,
-        .pub_ = [_]u8{0xBB} ** 32 ++ [_]u8{0x01},
+        .priv = @as([32]u8, @splat(0xAA)),
+        .pub_ = @as([32]u8, @splat(0xBB)) ++ [_]u8{0x01},
     };
 
     const derived = id.deriveChildKey(.{
@@ -182,8 +182,8 @@ test "ecdh identity" {
 }
 
 test "bkds ecdh with real secp256k1" {
-    const alice_priv = [_]u8{0xAA} ** 32;
-    const bob_priv = [_]u8{0xBB} ** 32;
+    const alice_priv: [32]u8 = @splat(0xAA);
+    const bob_priv: [32]u8 = @splat(0xBB);
     const alice_pub = secp.pubkeyCreate(alice_priv);
     const bob_pub = secp.pubkeyCreate(bob_priv);
     const shared_a = bkdsEcdh(alice_priv, bob_pub);
@@ -192,7 +192,7 @@ test "bkds ecdh with real secp256k1" {
 }
 
 test "derive child with real ecdh" {
-    const parent_priv = [_]u8{0x01} ** 32;
+    const parent_priv: [32]u8 = @splat(0x01);
     const parent_pub = secp.pubkeyCreate(parent_priv);
     const inv = InvoiceNo{ .sender_intent = .direct, .key_type = .signing_key, .key_id = 0, .counter = 0 };
     const result = KeyDerivation.deriveChild(parent_priv, parent_pub, inv, bkdsEcdh);

@@ -128,7 +128,7 @@ test "builder p2pkh" {
     var b = ScriptBuilder.init(allocator);
     defer b.deinit();
 
-    const hash = [_]u8{0xAA} ** 20;
+    const hash: [20]u8 = @splat(0xAA);
     try b.buildP2PKH(hash);
     const script = try b.finish();
     defer allocator.free(script);

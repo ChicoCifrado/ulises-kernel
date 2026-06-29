@@ -2,7 +2,6 @@ const std = @import("std");
 const builtin = @import("builtin");
 const global_alloc = @import("../mem/global.zig");
 const usb = @import("usb.zig");
-const x86_64 = @import("../arch/x86_64.zig");
 
 const VGA_WIDTH = 80;
 const VGA_HEIGHT = 25;
@@ -27,6 +26,76 @@ pub const ConsoleColor = enum(u4) {
     white = 15,
 };
 
+const serialPutChar_impl = if (builtin.target.cpu.arch == .x86_64) struct {
+    fn f(c: u8) void {
+        const x86 = @import("../arch/x86_64.zig");
+        while ((x86.inb(0x3F8 + 5) & 0x20) == 0) {}
+        x86.outb(0x3F8, c);
+    }
+}.f else if (builtin.target.cpu.arch == .aarch64 or builtin.target.cpu.arch == .arm) struct {
+    fn f(c: u8) void {
+        const arch = @import("../arch/aarch64.zig");
+        arch.serialPutChar(c);
+    }
+}.f else struct {
+    fn f(_: u8) void {}
+}.f;
+
+const serialCanRead_impl = if (builtin.target.cpu.arch == .x86_64) struct {
+    fn f() bool {
+        return @import("../arch/x86_64.zig").serialCanRead();
+    }
+}.f else if (builtin.target.cpu.arch == .aarch64 or builtin.target.cpu.arch == .arm) struct {
+    fn f() bool {
+        return @import("../arch/aarch64.zig").serialCanRead();
+    }
+}.f else struct {
+    fn f() bool { return false; }
+}.f;
+
+const serialReadChar_impl = if (builtin.target.cpu.arch == .x86_64) struct {
+    fn f() u8 {
+        return @import("../arch/x86_64.zig").serialReadChar();
+    }
+}.f else if (builtin.target.cpu.arch == .aarch64 or builtin.target.cpu.arch == .arm) struct {
+    fn f() u8 {
+        return @import("../arch/aarch64.zig").serialReadChar();
+    }
+}.f else struct {
+    fn f() u8 { return 0; }
+}.f;
+
+const displayWrite_impl = if (builtin.target.cpu.arch == .x86_64) struct {
+    fn f(offset: usize, val: u16) void {
+        if (builtin.is_test) return;
+        VGA_ADDR[offset] = val;
+    }
+}.f else struct {
+    fn f(_: usize, _: u16) void {}
+}.f;
+
+const scrollConsole_impl = if (builtin.target.cpu.arch == .x86_64) struct {
+    fn f() void {
+        if (builtin.is_test) return;
+        var y: usize = 1;
+        while (y < VGA_HEIGHT) {
+            var x: usize = 0;
+            while (x < VGA_WIDTH) {
+                VGA_ADDR[(y - 1) * VGA_WIDTH + x] = VGA_ADDR[y * VGA_WIDTH + x];
+                x += 1;
+            }
+            y += 1;
+        }
+        var x: usize = 0;
+        while (x < VGA_WIDTH) {
+            VGA_ADDR[(VGA_HEIGHT - 1) * VGA_WIDTH + x] = 0x0700 | ' ';
+            x += 1;
+        }
+    }
+}.f else struct {
+    fn f() void {}
+}.f;
+
 pub const Console = struct {
     row: u8 = 0,
     col: u8 = 0,
@@ -41,22 +110,17 @@ pub const Console = struct {
         const blank: u16 = makeAttr(.light_gray, .black) | ' ';
         var i: usize = 0;
         while (i < VGA_WIDTH * VGA_HEIGHT) {
-            vgaWrite(@as(u16, @intCast(i)), blank);
+            displayWrite_impl(@as(u16, @intCast(i)), blank);
             i += 1;
         }
         self.row = 0;
         self.col = 0;
     }
 
-    fn serialPutChar(c: u8) void {
-        while ((x86_64.inb(0x3F8 + 5) & 0x20) == 0) {}
-        x86_64.outb(0x3F8, c);
-    }
-
     pub fn putChar(self: *Console, ch: u8) void {
         if (builtin.target.os.tag == .freestanding and !builtin.is_test) {
-            if (ch == '\n') serialPutChar('\r');
-            serialPutChar(ch);
+            if (ch == '\n') serialPutChar_impl('\r');
+            serialPutChar_impl(ch);
         }
         switch (ch) {
             '\n' => self.newline(),
@@ -68,12 +132,12 @@ pub const Console = struct {
             0x08 => {
                 if (self.col > 0) {
                     self.col -= 1;
-                    vgaWrite(@as(usize, self.row) * VGA_WIDTH + @as(usize, self.col), makeAttr(self.fg, self.bg) | ' ');
+                    displayWrite_impl(@as(usize, self.row) * VGA_WIDTH + @as(usize, self.col), makeAttr(self.fg, self.bg) | ' ');
                 }
             },
             0x00...0x07, 0x0B...0x0C, 0x0E...0x1F => {},
             else => {
-                vgaWrite(@as(usize, self.row) * VGA_WIDTH + @as(usize, self.col), makeAttr(self.fg, self.bg) | ch);
+                displayWrite_impl(@as(usize, self.row) * VGA_WIDTH + @as(usize, self.col), makeAttr(self.fg, self.bg) | ch);
                 self.col += 1;
                 if (self.col >= VGA_WIDTH) self.newline();
             },
@@ -104,7 +168,7 @@ pub const Console = struct {
         if (self.row + 1 < VGA_HEIGHT) {
             self.row += 1;
         } else {
-            scrollConsole();
+            scrollConsole_impl();
         }
     }
 
@@ -124,7 +188,7 @@ pub const Console = struct {
                         if (idx > 0) {
                             idx -= 1;
                             self.col -= 1;
-                            vgaWrite(@as(usize, self.row) * VGA_WIDTH + @as(usize, self.col), makeAttr(self.fg, self.bg) | ' ');
+                            displayWrite_impl(@as(usize, self.row) * VGA_WIDTH + @as(usize, self.col), makeAttr(self.fg, self.bg) | ' ');
                         }
                         continue;
                     }
@@ -137,8 +201,8 @@ pub const Console = struct {
                     continue;
                 }
             }
-            if (x86_64.serialCanRead()) {
-                const ch = x86_64.serialReadChar();
+            if (serialCanRead_impl()) {
+                const ch = serialReadChar_impl();
                 if (ch == '\r' or ch == '\n') {
                     buf[idx] = 0;
                     self.write("\n");
@@ -148,7 +212,7 @@ pub const Console = struct {
                     if (idx > 0) {
                         idx -= 1;
                         self.col -= 1;
-                        vgaWrite(@as(usize, self.row) * VGA_WIDTH + @as(usize, self.col), makeAttr(self.fg, self.bg) | ' ');
+                        displayWrite_impl(@as(usize, self.row) * VGA_WIDTH + @as(usize, self.col), makeAttr(self.fg, self.bg) | ' ');
                     }
                     continue;
                 }
@@ -164,29 +228,6 @@ pub const Console = struct {
 
 fn makeAttr(fg: ConsoleColor, bg: ConsoleColor) u16 {
     return (@as(u16, @intFromEnum(bg)) << 12) | (@as(u16, @intFromEnum(fg)) << 8);
-}
-
-fn vgaWrite(offset: usize, val: u16) void {
-    if (builtin.is_test) return;
-    VGA_ADDR[offset] = val;
-}
-
-fn scrollConsole() void {
-    if (builtin.is_test) return;
-    var y: usize = 1;
-    while (y < VGA_HEIGHT) {
-        var x: usize = 0;
-        while (x < VGA_WIDTH) {
-            VGA_ADDR[(y - 1) * VGA_WIDTH + x] = VGA_ADDR[y * VGA_WIDTH + x];
-            x += 1;
-        }
-        y += 1;
-    }
-    var x: usize = 0;
-    while (x < VGA_WIDTH) {
-        VGA_ADDR[(VGA_HEIGHT - 1) * VGA_WIDTH + x] = 0x0700 | ' ';
-        x += 1;
-    }
 }
 
 var global_console: Console = .{};

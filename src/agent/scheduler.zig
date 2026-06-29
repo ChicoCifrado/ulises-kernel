@@ -46,8 +46,8 @@ pub const AgentScheduler = struct {
 
     pub fn init(_: std.mem.Allocator, agent_ctx: *anyopaque, _: *const anyopaque) AgentScheduler {
         return .{
-            .task_queue = .{},
-            .tools = .{},
+            .task_queue = .empty,
+            .tools = .empty,
             .agent_ctx = agent_ctx,
         };
     }

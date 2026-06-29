@@ -162,7 +162,8 @@ pub fn handler(frame: *const idt_mod.InterruptFrame) u64 {
     const saved_frame = frame;
     asm volatile (
         \\movq %[stack_top], %%rsp
-        : : [stack_top] "r" (&panic_stack[panic_stack.len - 8]) :
+        :
+        : [stack_top] "r" (&panic_stack[panic_stack.len - 8]),
     );
     _ = &saved_frame;
     const f = saved_frame;
