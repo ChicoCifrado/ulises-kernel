@@ -92,19 +92,19 @@ pub export fn kmainReal() noreturn {
         const log = @import("hal/logger.zig");
         log.write("[ZA]\n");
     }
-    initInterrupts();
+    var page_allocator = pmm.PageAllocator.init(&page_mem, page_mem.len, 4096);
     {
         const log = @import("hal/logger.zig");
         log.write("[ZB]\n");
     }
-    var page_allocator = pmm.PageAllocator.init(&page_mem, page_mem.len, 4096);
+    if (builtin.target.cpu.arch == .x86_64) {
+        smp.initSmp(&page_allocator);
+    }
     {
         const log = @import("hal/logger.zig");
         log.write("[ZC]\n");
     }
-    if (builtin.target.cpu.arch == .x86_64) {
-        smp.initSmp(&page_allocator);
-    }
+    initInterrupts();
     {
         const log = @import("hal/logger.zig");
         log.write("[ZD]\n");
@@ -124,8 +124,8 @@ pub export fn kmainReal() noreturn {
         };
         {
             const log = @import("hal/logger.zig");
-            log.write("[GB]\n");
-        }
+        log.write("[GB]\n");
+    }
     }
 
     dbgWr('b');
