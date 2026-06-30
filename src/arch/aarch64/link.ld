@@ -6,7 +6,7 @@ phys = 0x40000000;
 PHDRS
 {
     text PT_LOAD FLAGS(5);
-    rodata PT_LOAD FLAGS(4);
+    rodata PT_LOAD FLAGS(6);
     data PT_LOAD FLAGS(6);
 }
 

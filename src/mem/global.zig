@@ -16,7 +16,7 @@ fn allocFn(ctx: *anyopaque, len: usize, alignment: std.mem.Alignment, ret_addr: 
     if (aligned_pos + len > size) return null;
     const p = base + aligned_pos;
     pos = aligned_pos + len;
-    @memset(p[0..len], 0);
+    for (0..len) |i| p[i] = 0;
     return p;
 }
 
