@@ -413,7 +413,7 @@ fn readCr3() u64 {
     return val;
 }
 
-fn apMain() callconv(.C) void {
+fn apMain() callconv(std.lang.CallingConvention.c) void {
     const cpu = thisCpu();
     cpu.state = .running;
     x86_64.sti();
@@ -484,14 +484,45 @@ pub fn initSmp(page_allocator: *pmm.PageAllocator) void {
     lapicInit();
     ioapicInit();
 
-    cpu_count = 1;
-    cpu_table[0] = .{
-        .cpu_id = 0,
-        .apic_id = 0,
-        .state = .running,
-        .stack_base = 0,
-        .lapic_base = lapic_base,
-    };
+    // Ensure BSP is marked running (parseMadt already populated cpu_table)
+    if (cpu_count == 0) {
+        cpu_count = 1;
+        cpu_table[0] = .{
+            .cpu_id = 0,
+            .apic_id = 0,
+            .state = .running,
+            .stack_base = 0,
+            .lapic_base = lapic_base,
+        };
+    } else {
+        // Mark BSP as running; APs stay .disabled
+        const bsp_id = lapicId();
+        for (0..cpu_count) |i| {
+            if (cpu_table[i].apic_id == bsp_id) {
+                cpu_table[i].state = .running;
+                break;
+            }
+        }
+    }
+}
+
+pub fn startAps() void {
+    if (builtin.target.cpu.arch != .x86_64) return;
+    if (cpu_count <= 1) return;
+
+    writeTrampoline();
+    for (0..cpu_count) |i| {
+        if (cpu_table[i].state == .disabled) {
+            _ = wakeUpCpu(@intCast(i));
+        }
+    }
+
+    // Wait briefly for APs to ack
+    for (0..cpu_count) |i| {
+        if (cpu_table[i].state != .running) {
+            _ = waitForAp(@intCast(i));
+        }
+    }
 }
 
 pub fn cpuCount() u32 {

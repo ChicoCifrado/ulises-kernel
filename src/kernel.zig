@@ -23,6 +23,7 @@ const net_stack = @import("net/stack.zig");
 const shell = @import("shell/shell.zig");
 const smp = if (builtin.target.cpu.arch == .x86_64) @import("arch/smp.zig") else struct {
     pub fn initSmp(_: anytype) void {}
+    pub fn startAps() void {}
 };
 const spinlock = @import("sync/spinlock.zig");
 const global_alloc = @import("mem/global.zig");
@@ -130,6 +131,7 @@ pub export fn kmainReal() noreturn {
 
     dbgWr('b');
     initBootDevices(&page_allocator);
+    smp.startAps();
     const UTXO_SLOTS = 1000;
     const SCRIPT_HEAP_SIZE = 64 * 1024;
 
