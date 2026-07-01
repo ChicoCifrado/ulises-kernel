@@ -7,16 +7,43 @@ var pos: usize = 0;
 var size: usize = 0;
 var initialized: bool = false;
 
+const MAX_FREE_SLOTS = 64;
+var free_ptr: [MAX_FREE_SLOTS][*]u8 = undefined;
+var free_len: [MAX_FREE_SLOTS]usize = undefined;
+var free_count: usize = 0;
+
 fn allocFn(ctx: *anyopaque, len: usize, alignment: std.mem.Alignment, ret_addr: usize) ?[*]u8 {
     _ = ctx;
     _ = ret_addr;
     if (!initialized) return null;
     const align_bytes = alignment.toByteUnits();
-    const aligned_pos = (pos + align_bytes - 1) & ~(align_bytes - 1);
+
+    // Check free stack LIFO for a suitable block
+    var i: usize = free_count;
+    while (i > 0) {
+        i -= 1;
+        const f_ptr = free_ptr[i];
+        const f_len = free_len[i];
+        if (f_len >= len) {
+            // Remove from free list
+            if (i + 1 < free_count) {
+                free_ptr[i] = free_ptr[free_count - 1];
+                free_len[i] = free_len[free_count - 1];
+            }
+            free_count -= 1;
+            @memset(f_ptr[0..len], 0);
+            return f_ptr;
+        }
+    }
+
+    // Bump allocate
+    const unaligned = @intFromPtr(base + pos);
+    const aligned = (unaligned + align_bytes - 1) & ~(align_bytes - 1);
+    const aligned_pos = aligned - @intFromPtr(base);
     if (aligned_pos + len > size) return null;
     const p = base + aligned_pos;
     pos = aligned_pos + len;
-    for (0..len) |i| p[i] = 0;
+    @memset(p[0..len], 0);
     return p;
 }
 
@@ -40,9 +67,23 @@ fn remapFn(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, new_len:
 
 fn freeFn(ctx: *anyopaque, memory: []u8, alignment: std.mem.Alignment, ret_addr: usize) void {
     _ = ctx;
-    _ = memory;
     _ = alignment;
     _ = ret_addr;
+
+    // If the freed block is at the top of the bump, just rewind
+    const block_end = @intFromPtr(memory.ptr) + memory.len;
+    const bump_top = @intFromPtr(base) + pos;
+    if (block_end == bump_top) {
+        pos -= memory.len;
+        return;
+    }
+
+    // Otherwise push to free stack (LIFO)
+    if (free_count < MAX_FREE_SLOTS) {
+        free_ptr[free_count] = memory.ptr;
+        free_len[free_count] = memory.len;
+        free_count += 1;
+    }
 }
 
 const vtable = std.mem.Allocator.VTable{

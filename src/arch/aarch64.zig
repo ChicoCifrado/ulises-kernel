@@ -193,3 +193,10 @@ pub fn timerHandle() void {
     // Re-arm for next tick
     timerInit(100); // 100 Hz for now
 }
+
+export fn aarch64_irq_handler(irq: u32) void {
+    // QEMU virt: PPI 30 = generic timer
+    if (irq == 30) {
+        timerHandle();
+    }
+}
