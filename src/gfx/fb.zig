@@ -96,6 +96,10 @@ pub const FramebufferInfo = struct {
     }
 
     fn readDec(data: []const u8, pos: *usize) ?u32 {
+        // Skip whitespace
+        while (pos.* < data.len and (data[pos.*] == ' ' or data[pos.*] == '\n' or data[pos.*] == '\r' or data[pos.*] == '\t')) {
+            pos.* += 1;
+        }
         var val: u32 = 0;
         var found = false;
         while (pos.* < data.len) {
@@ -110,3 +114,100 @@ pub const FramebufferInfo = struct {
         return val;
     }
 };
+
+test "isValid zero addr" {
+    const fb = FramebufferInfo{ .addr = 0, .pitch = 0, .width = 0, .height = 0, .bpp = 0, .type = 0 };
+    try std.testing.expect(!fb.isValid());
+}
+
+test "isValid valid" {
+    const fb = FramebufferInfo{ .addr = 0x1000, .pitch = 2560, .width = 640, .height = 480, .bpp = 32, .type = 1 };
+    try std.testing.expect(fb.isValid());
+}
+
+test "clear 32bpp" {
+    var buf: [64 * 4]u8 = undefined;
+    var fb = FramebufferInfo{
+        .addr = @intFromPtr(&buf),
+        .pitch = 64 * 4,
+        .width = 64,
+        .height = 1,
+        .bpp = 32,
+        .type = 1,
+    };
+    fb.clear(0xAABBCC);
+    for (0..64) |i| {
+        try std.testing.expectEqual(@as(u8, 0xAA), buf[i * 4 + 0]);
+        try std.testing.expectEqual(@as(u8, 0xBB), buf[i * 4 + 1]);
+        try std.testing.expectEqual(@as(u8, 0xCC), buf[i * 4 + 2]);
+        try std.testing.expectEqual(@as(u8, 0xFF), buf[i * 4 + 3]);
+    }
+}
+
+test "clear 24bpp" {
+    var buf: [64 * 3]u8 = undefined;
+    var fb = FramebufferInfo{
+        .addr = @intFromPtr(&buf),
+        .pitch = 64 * 3,
+        .width = 64,
+        .height = 1,
+        .bpp = 24,
+        .type = 1,
+    };
+    fb.clear(0xAABBCC);
+    for (0..64) |i| {
+        try std.testing.expectEqual(@as(u8, 0xAA), buf[i * 3 + 0]);
+        try std.testing.expectEqual(@as(u8, 0xBB), buf[i * 3 + 1]);
+        try std.testing.expectEqual(@as(u8, 0xCC), buf[i * 3 + 2]);
+    }
+}
+
+test "blitPpm 2x2" {
+    var buf: [4 * 4 * 4]u8 = undefined;
+    @memset(&buf, 0x00);
+    var fb = FramebufferInfo{
+        .addr = @intFromPtr(&buf),
+        .pitch = 4 * 4,
+        .width = 4,
+        .height = 4,
+        .bpp = 32,
+        .type = 1,
+    };
+
+    // Create a minimal PPM (2x2, red + green + blue + white)
+    const ppm = "P6\n2 2\n255\n" ++
+        "\xFF\x00\x00" ++ // (0,0) red
+        "\x00\xFF\x00" ++ // (1,0) green
+        "\x00\x00\xFF" ++ // (0,1) blue
+        "\xFF\xFF\xFF";   // (1,1) white
+    fb.blitPpm(ppm, 0, 0, 4, 4);
+    // Top-left (red) at fb[0..3]
+    try std.testing.expectEqual(@as(u8, 0xFF), buf[0]);
+    try std.testing.expectEqual(@as(u8, 0x00), buf[1]);
+    try std.testing.expectEqual(@as(u8, 0x00), buf[2]);
+    // Top-right (green) at fb[4..7]
+    try std.testing.expectEqual(@as(u8, 0x00), buf[4]);
+    try std.testing.expectEqual(@as(u8, 0xFF), buf[5]);
+    try std.testing.expectEqual(@as(u8, 0x00), buf[6]);
+    // Bottom-left (blue) at fb[16..19]
+    try std.testing.expectEqual(@as(u8, 0x00), buf[16]);
+    try std.testing.expectEqual(@as(u8, 0x00), buf[17]);
+    try std.testing.expectEqual(@as(u8, 0xFF), buf[18]);
+    // Bottom-right (white) at fb[20..23]
+    try std.testing.expectEqual(@as(u8, 0xFF), buf[20]);
+    try std.testing.expectEqual(@as(u8, 0xFF), buf[21]);
+    try std.testing.expectEqual(@as(u8, 0xFF), buf[22]);
+}
+
+test "readDec basic" {
+    var pos: usize = 0;
+    const data = "123 456";
+    try std.testing.expectEqual(@as(u32, 123), FramebufferInfo.readDec(data, &pos));
+    try std.testing.expectEqual(@as(u32, 456), FramebufferInfo.readDec(data, &pos));
+    try std.testing.expect(FramebufferInfo.readDec(data, &pos) == null);
+}
+
+test "readDec invalid" {
+    var pos: usize = 0;
+    try std.testing.expect(FramebufferInfo.readDec("abc", &pos) == null);
+}

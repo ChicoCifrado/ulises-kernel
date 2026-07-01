@@ -19,7 +19,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    if (arch == .x86_64 and os == .freestanding) {
+    if (os == .freestanding) {
         kernel_obj.root_module.red_zone = false;
     }
 
@@ -85,30 +85,55 @@ pub fn build(b: *std.Build) void {
     }
     if (arch == .aarch64 and os == .freestanding) {
         kernel.setLinkerScript(b.path("src/arch/aarch64/link.ld"));
-        kernel.root_module.red_zone = false;
     }
 
     const install_kernel = b.addInstallArtifact(kernel, .{});
     const kernel_lp = kernel.getEmittedBin();
     b.default_step.dependOn(&install_kernel.step);
 
-    const test_lib = b.addTest(.{
+    // Native host test (can actually run on the build machine)
+    const test_gfx = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("src/kernel.zig"),
-            .target = target,
+            .root_source_file = b.path("src/gfx/test.zig"),
+            .target = b.graph.host,
             .optimize = optimize,
         }),
     });
-
-    const test_step = b.step("test", "Run all tests");
-    const run_test = b.addRunArtifact(test_lib);
+    const test_step = b.step("test", "Run host-native tests");
+    const run_test = b.addRunArtifact(test_gfx);
     test_step.dependOn(&run_test.step);
 
+    // CI: compile-check both architectures
+    const ci_x86 = b.addObject(.{
+        .name = "kernel-ci-x86",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/kernel.zig"),
+            .target = b.resolveTargetQuery(.{ .cpu_arch = .x86_64, .os_tag = .freestanding }),
+            .optimize = optimize,
+        }),
+    });
+    ci_x86.root_module.red_zone = false;
+
+    const ci_arm = b.addObject(.{
+        .name = "kernel-ci-arm",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/kernel.zig"),
+            .target = b.resolveTargetQuery(.{ .cpu_arch = .aarch64, .os_tag = .freestanding }),
+            .optimize = optimize,
+        }),
+    });
+    ci_arm.root_module.red_zone = false;
+
+    const ci_step = b.step("ci-test", "Compile-check x86_64 + aarch64 freestanding");
+    ci_step.dependOn(&ci_x86.step);
+    ci_step.dependOn(&ci_arm.step);
+
+    // UTXO benchmark (host target — needs libc for stdout)
     const bench = b.addExecutable(.{
         .name = "utxo-bench",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/utxo/bench.zig"),
-            .target = target,
+            .target = b.graph.host,
             .optimize = .ReleaseFast,
         }),
     });

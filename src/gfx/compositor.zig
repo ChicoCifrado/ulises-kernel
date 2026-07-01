@@ -42,8 +42,9 @@ pub const Compositor = struct {
     pub fn drawText(self: *Compositor, x: i32, y: i32, text: []const u8, fg: u32, bg: u32) void {
         const f = self.font orelse return;
         if (!self.fb.isValid()) return;
+        const slice = self.fb.asSlice() orelse return;
         f.drawText(
-            self.fb.asSlice().?,
+            slice,
             self.fb.width,
             self.fb.height,
             self.fb.bpp,
@@ -78,3 +79,92 @@ pub const Compositor = struct {
         // Future: double-buffering, page flip, damage tracking
     }
 };
+
+test "init compositor" {
+    const fb = fb_mod.FramebufferInfo{ .addr = 0, .pitch = 0, .width = 0, .height = 0, .bpp = 0, .type = 0 };
+    var comp = Compositor.init(fb);
+    try std.testing.expect(comp.font == null);
+    try std.testing.expect(!comp.fb.isValid());
+}
+
+test "clear compositor" {
+    var buf: [64 * 4]u8 = undefined;
+    const fb = fb_mod.FramebufferInfo{
+        .addr = @intFromPtr(&buf),
+        .pitch = 64 * 4,
+        .width = 64,
+        .height = 1,
+        .bpp = 32,
+        .type = 1,
+    };
+    var comp = Compositor.init(fb);
+    comp.clear(0xFF0000);
+    try std.testing.expectEqual(@as(u8, 0xFF), buf[0]);
+    try std.testing.expectEqual(@as(u8, 0x00), buf[1]);
+    try std.testing.expectEqual(@as(u8, 0x00), buf[2]);
+}
+
+test "drawProgressBar 50%" {
+    var buf: [64 * 4]u8 = undefined;
+    @memset(&buf, 0x00);
+    const fb = fb_mod.FramebufferInfo{
+        .addr = @intFromPtr(&buf),
+        .pitch = 64 * 4,
+        .width = 64,
+        .height = 1,
+        .bpp = 32,
+        .type = 1,
+    };
+    var comp = Compositor.init(fb);
+    comp.drawProgressBar(0, 0, 64, 1, 0.5, 0x199FFF, 0x3D4450);
+    // Column 31 (before 50%) should be accent color
+    try std.testing.expectEqual(@as(u8, 0x19), buf[31 * 4 + 0]);
+    try std.testing.expectEqual(@as(u8, 0x9F), buf[31 * 4 + 1]);
+    try std.testing.expectEqual(@as(u8, 0xFF), buf[31 * 4 + 2]);
+    // Column 32 (at 50%) should be bg color
+    try std.testing.expectEqual(@as(u8, 0x3D), buf[32 * 4 + 0]);
+    try std.testing.expectEqual(@as(u8, 0x44), buf[32 * 4 + 1]);
+    try std.testing.expectEqual(@as(u8, 0x50), buf[32 * 4 + 2]);
+}
+
+test "drawProgressBar 0% and 100%" {
+    var buf: [64 * 4]u8 = undefined;
+    @memset(&buf, 0x00);
+    const fb = fb_mod.FramebufferInfo{
+        .addr = @intFromPtr(&buf),
+        .pitch = 64 * 4,
+        .width = 64,
+        .height = 1,
+        .bpp = 32,
+        .type = 1,
+    };
+    var comp = Compositor.init(fb);
+    comp.drawProgressBar(0, 0, 64, 1, 0.0, 0x199FFF, 0x3D4450);
+    // Column 0 should be bg at 0%
+    try std.testing.expectEqual(@as(u8, 0x3D), buf[0]);
+
+    @memset(&buf, 0x00);
+    comp.drawProgressBar(0, 0, 64, 1, 1.0, 0x199FFF, 0x3D4450);
+    // Last column should be accent at 100%
+    try std.testing.expectEqual(@as(u8, 0x19), buf[63 * 4 + 0]);
+}
+
+test "blitWallpaper 2x2" {
+    var buf: [4 * 4 * 4]u8 = undefined;
+    @memset(&buf, 0x00);
+    const fb = fb_mod.FramebufferInfo{
+        .addr = @intFromPtr(&buf),
+        .pitch = 4 * 4,
+        .width = 4,
+        .height = 4,
+        .bpp = 32,
+        .type = 1,
+    };
+    var comp = Compositor.init(fb);
+    const ppm = "P6\n2 2\n255\n\xFF\x00\x00\x00\xFF\x00\x00\x00\xFF\xFF\xFF\xFF";
+    comp.blitWallpaper(ppm);
+    // Top-left should be red
+    try std.testing.expectEqual(@as(u8, 0xFF), buf[0]);
+    try std.testing.expectEqual(@as(u8, 0x00), buf[1]);
+    try std.testing.expectEqual(@as(u8, 0x00), buf[2]);
+}
