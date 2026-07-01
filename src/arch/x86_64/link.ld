@@ -64,7 +64,7 @@ SECTIONS
     /DISCARD/ :
     {
         *(.comment*)
-        *(.note*)
+        *(.note.gnu*)
         *(.eh_frame*)
         *(.got*)
         *(.plt*)
