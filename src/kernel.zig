@@ -266,9 +266,12 @@ fn initBootDevices(page_allocator: *pmm.PageAllocator) void {
         for (pci_devs) |dev| {
             if (dev.class_code == 0x02 and dev.subclass == 0x00) {
                 dbgWr('E');
-                const mmio_phys = dev.bar0 & 0xFFFFFFF0;
-                x86_64.invlpg(mmio_phys);
-                const mmio_base: [*]volatile u32 = @ptrFromInt(mmio_phys);
+                const mmio_phys: u64 = if (dev.bar0_is_64bit)
+                    (dev.bar0 & 0xFFFFFFF0) | (@as(u64, dev.bar0_upper) << 32)
+                else
+                    dev.bar0 & 0xFFFFFFF0;
+                x86_64.invlpg(@intCast(mmio_phys));
+                const mmio_base: [*]volatile u32 = @ptrFromInt(@as(usize, @intCast(mmio_phys)));
                 nic = e1000.E1000.init(allocator, mmio_base) catch {
                     logError("e1000 init failed");
                     continue;

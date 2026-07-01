@@ -14,8 +14,11 @@ pub const PciDevice = struct {
     subclass: u8,
     prog_if: u8,
     bar0: u32,
+    bar0_upper: u32,
     bar1: u32,
+    bar1_upper: u32,
     irq: u8,
+    bar0_is_64bit: bool,
 };
 
 extern fn pciConfigReadC(bus: u8, device: u8, func: u8, offset: u8) u32;
@@ -39,7 +42,11 @@ pub const mapMmioBars = if (builtin.target.cpu.arch == .x86_64) struct {
                     const is_mmio = bar & 1 == 0 and bar != 0;
                     const is_64bit = (bar >> 1) & 0x03 == 2;
                     if (is_mmio) {
-                        const phys = bar & 0xFFFFFFF0;
+                        var phys: u64 = bar & 0xFFFFFFF0;
+                        if (is_64bit) {
+                            const upper = pciConfigReadC(b, d, 0, @as(u8, @truncate(bar_offs + 4)));
+                            phys |= @as(u64, upper) << 32;
+                        }
                         if (phys >= 0xC0000000) {
                             log.write("[PM]\n");
                             x86_64.mapMmioRegion(phys, 4096, page_alloc);
@@ -70,7 +77,12 @@ pub const enumerate = if (builtin.target.cpu.arch == .x86_64) struct {
                 if (vendor == 0xFFFFFFFF) continue;
 
                 const class_reg = pciConfigReadC(@as(u8, @intCast(bus)), @as(u8, @intCast(dev)), 0, 8);
-                const bar0 = pciConfigReadC(@as(u8, @intCast(bus)), @as(u8, @intCast(dev)), 0, 0x10);
+                const bar0_raw = pciConfigReadC(@as(u8, @intCast(bus)), @as(u8, @intCast(dev)), 0, 0x10);
+                const bar0_is_64bit = bar0_raw != 0 and (bar0_raw >> 1) & 0x03 == 2;
+                const bar0_upper = if (bar0_is_64bit)
+                    pciConfigReadC(@as(u8, @intCast(bus)), @as(u8, @intCast(dev)), 0, 0x14)
+                else
+                    0;
                 const irq_reg = pciConfigReadC(@as(u8, @intCast(bus)), @as(u8, @intCast(dev)), 0, 0x3C);
 
                 try devices.append(allocator, .{
@@ -82,9 +94,12 @@ pub const enumerate = if (builtin.target.cpu.arch == .x86_64) struct {
                     .class_code = @as(u8, @truncate(class_reg >> 24)),
                     .subclass = @as(u8, @truncate(class_reg >> 16)),
                     .prog_if = @as(u8, @truncate(class_reg >> 8)),
-                    .bar0 = bar0,
-                    .bar1 = pciConfigReadC(@as(u8, @intCast(bus)), @as(u8, @intCast(dev)), 0, 0x14),
+                    .bar0 = bar0_raw,
+                    .bar0_upper = bar0_upper,
+                    .bar1 = if (bar0_is_64bit) 0 else pciConfigReadC(@as(u8, @intCast(bus)), @as(u8, @intCast(dev)), 0, 0x14),
+                    .bar1_upper = 0,
                     .irq = @as(u8, @truncate(irq_reg)),
+                    .bar0_is_64bit = bar0_is_64bit,
                 });
             }
         }
