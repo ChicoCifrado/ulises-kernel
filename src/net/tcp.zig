@@ -47,11 +47,19 @@ pub const TcpHeader = packed struct {
             .protocol = 6,
             .tcp_len = @byteSwap(@as(u16, @intCast(TCP_HLEN + payload.len))),
         };
-        const pseudo_words = @as(*const [6]u16, @ptrCast(&pseudo));
-        for (pseudo_words) |w| sum += @byteSwap(w);
-        const tcp_words = @as(*const [10]u16, @ptrCast(hdr));
-        for (tcp_words) |w| sum += @byteSwap(w);
+        const pseudo_bytes = std.mem.asBytes(&pseudo);
         var i: usize = 0;
+        while (i + 1 < pseudo_bytes.len) {
+            sum += @as(u32, pseudo_bytes[i]) << 8 | pseudo_bytes[i + 1];
+            i += 2;
+        }
+        const hdr_bytes = std.mem.asBytes(hdr);
+        i = 0;
+        while (i + 1 < hdr_bytes.len) {
+            sum += @as(u32, hdr_bytes[i]) << 8 | hdr_bytes[i + 1];
+            i += 2;
+        }
+        i = 0;
         while (i + 1 < payload.len) {
             sum += @as(u32, payload[i]) << 8 | payload[i + 1];
             i += 2;
@@ -63,7 +71,7 @@ pub const TcpHeader = packed struct {
     }
 };
 
-const PseudoHeader = packed struct {
+const PseudoHeader = extern struct {
     src: [4]u8,
     dst: [4]u8,
     zero: u8,

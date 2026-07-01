@@ -5,6 +5,7 @@ const brc100 = @import("../bsv/brc100.zig");
 const hash = @import("../bsv/hash.zig");
 const primitives = @import("../bsv/primitives.zig");
 const global_alloc = @import("../mem/global.zig");
+const net_stack = @import("../net/stack.zig");
 
 const MAX_HISTORY = 64;
 const MAX_LINE = 256;
@@ -23,6 +24,7 @@ pub const ShellContext = struct {
     prompt: []const u8 = "> ",
     theme: Theme = .{},
     running: bool = true,
+    net_stack: ?*net_stack.Stack = null,
 
     pub fn addToHistory(self: *ShellContext, line: []const u8) void {
         const allocator = global_alloc.get();
@@ -79,6 +81,7 @@ pub fn run(ctx: *ShellContext, con: *console.Console, wallet: ?*brc100.KernelWal
 
     var input_buf: [MAX_LINE]u8 = undefined;
     while (ctx.running) {
+        if (ctx.net_stack) |s| s.poll();
         renderPrompt(con, ctx);
         const line = con.readLine(ctx.prompt, &input_buf) catch {
             con.write("\n");
@@ -229,8 +232,19 @@ fn cmdSet(args: []const u8, con: *console.Console, ctx: *ShellContext) void {
     }
 }
 
-fn cmdPeers(_: []const u8, con: *console.Console, _: *ShellContext) void {
-    con.write("  peers: (network layer not yet connected)\n");
+fn cmdPeers(_: []const u8, con: *console.Console, ctx: *ShellContext) void {
+    if (ctx.net_stack) |s| {
+        con.writeFmt("  IP: {}.{}.{}.{} / GW: {}.{}.{}.{}\n", .{
+            s.our_ip[0], s.our_ip[1], s.our_ip[2], s.our_ip[3],
+            s.our_gateway[0], s.our_gateway[1], s.our_gateway[2], s.our_gateway[3],
+        });
+        con.writeFmt("  MAC: {x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}:{x:0>2}\n", .{
+            s.our_mac[0], s.our_mac[1], s.our_mac[2], s.our_mac[3], s.our_mac[4], s.our_mac[5],
+        });
+        con.writeFmt("  ARP cache: {d} entries\n", .{s.arp_cache.count});
+    } else {
+        con.write("  network: not available (no NIC)\n");
+    }
 }
 
 fn cmdPci(_: []const u8, con: *console.Console, _: *ShellContext) void {

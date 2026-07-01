@@ -8,7 +8,7 @@ pub const Type = enum(u8) {
     _,
 };
 
-pub const IcmpHeader = packed struct {
+pub const IcmpHeader = extern struct {
     type_: u8,
     code: u8,
     checksum: u16,
@@ -28,9 +28,13 @@ pub const IcmpHeader = packed struct {
 
     pub fn computeChecksum(hdr: *const IcmpHeader, payload: []const u8) u16 {
         var sum: u32 = 0;
-        const words = @as(*const [4]u16, @ptrCast(hdr));
-        for (words) |w| sum += @byteSwap(w);
+        const bytes = std.mem.asBytes(hdr);
         var i: usize = 0;
+        while (i + 1 < bytes.len) {
+            sum += @as(u32, bytes[i]) << 8 | bytes[i + 1];
+            i += 2;
+        }
+        i = 0;
         while (i + 1 < payload.len) {
             sum += @as(u32, payload[i]) << 8 | payload[i + 1];
             i += 2;

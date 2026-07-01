@@ -9,7 +9,7 @@ pub const Protocol = enum(u8) {
     _,
 };
 
-pub const Ipv4Header = packed struct {
+pub const Ipv4Header = extern struct {
     ver_ihl: u8,
     dscp_ecn: u8,
     total_len: u16,
@@ -40,8 +40,12 @@ pub const Ipv4Header = packed struct {
 
     pub fn computeChecksum(self: *const Ipv4Header) u16 {
         var sum: u32 = 0;
-        const words = @as(*const [10]u16, @ptrCast(self));
-        for (words) |w| sum += @byteSwap(w);
+        const bytes = std.mem.asBytes(self);
+        var i: usize = 0;
+        while (i + 1 < bytes.len) {
+            sum += @as(u32, bytes[i]) << 8 | bytes[i + 1];
+            i += 2;
+        }
         sum = (sum >> 16) + (sum & 0xFFFF);
         sum = (sum >> 16) + (sum & 0xFFFF);
         return @as(u16, ~@as(u16, @truncate(sum)));

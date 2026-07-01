@@ -27,10 +27,18 @@ const smp = if (builtin.target.cpu.arch == .x86_64) @import("arch/smp.zig") else
 };
 const spinlock = @import("sync/spinlock.zig");
 const global_alloc = @import("mem/global.zig");
+const gfx_compositor = @import("gfx/compositor.zig");
+const gfx_font = @import("gfx/font.zig");
+const gfx_fb_mod = @import("gfx/fb.zig");
+const gfx_assets = @import("gfx/assets.zig");
+const gfx_rebrand = @import("gfx/rebrand.zig");
 
 var page_mem: [1024 * 4096]u8 align(4096) = undefined;
 var nic: e1000.E1000 = undefined;
 var g_stack: net_stack.Stack = undefined;
+var g_net_available: bool = false;
+var g_compositor: gfx_compositor.Compositor = undefined;
+var g_fb_available: bool = false;
 
 comptime {
     if (builtin.target.os.tag == .freestanding and !builtin.is_test) {
@@ -129,9 +137,16 @@ pub export fn kmainReal() noreturn {
     }
     }
 
+    gfxTryInit();
+    gfxBootSplash(0.08);
+
     dbgWr('b');
     initBootDevices(&page_allocator);
+    gfxBootSplash(0.30);
+
     smp.startAps();
+    gfxBootSplash(0.45);
+
     const UTXO_SLOTS = 1000;
     const SCRIPT_HEAP_SIZE = 64 * 1024;
 
@@ -142,14 +157,20 @@ pub export fn kmainReal() noreturn {
         }
         h.halt(.panic);
     };
+    gfxBootSplash(0.65);
 
     const kernel_alloc = global_alloc.get();
     var wallet_engine = brc100.KernelWallet.init(kernel_alloc, &utxo);
     wallet_engine.setNetwork(.mainnet);
+    gfxBootSplash(0.80);
 
     _ = initAgent(&h, &wallet_engine);
+    gfxBootSplash(0.95);
+
+    gfxBootFinal();
 
     var ctx = shell.ShellContext{};
+    if (g_net_available) ctx.net_stack = &g_stack;
     var con = console_mod.Console.init();
     con.clear();
     shell.run(&ctx, &con, &wallet_engine);
@@ -277,6 +298,8 @@ fn initBootDevices(page_allocator: *pmm.PageAllocator) void {
                     continue;
                 };
                 dbgWr('e');
+                g_stack = net_stack.Stack.init(&nic, .{ 10, 0, 2, 15 }, .{ 255, 255, 255, 0 }, .{ 10, 0, 2, 1 });
+                g_net_available = true;
                 break;
             }
         }
@@ -286,6 +309,56 @@ fn initBootDevices(page_allocator: *pmm.PageAllocator) void {
 fn initUtxoStack(num_slots: usize, script_heap_size: usize) !utxo_stack.UtxoStack {
     const allocator = global_alloc.get();
     return try utxo_stack.UtxoStack.init(allocator, num_slots, script_heap_size);
+}
+
+fn gfxBootSplash(progress: f64) void {
+    if (!g_fb_available) return;
+    if (builtin.target.cpu.arch != .x86_64) return;
+    if (builtin.target.os.tag != .freestanding) return;
+    const bar_w = @min(g_compositor.fb.width / 2, 400);
+    const bar_h: u32 = 6;
+    const bar_x = (g_compositor.fb.width - bar_w) / 2;
+    const bar_y = g_compositor.fb.height - 40;
+    g_compositor.drawProgressBar(bar_x, bar_y, bar_w, bar_h, @as(f32, @floatCast(progress)), gfx_rebrand.config.progress_color, gfx_rebrand.config.progress_bg);
+}
+
+fn gfxBootFinal() void {
+    if (!g_fb_available) return;
+    if (builtin.target.cpu.arch != .x86_64) return;
+    if (builtin.target.os.tag != .freestanding) return;
+    const fb_slice = g_compositor.fb.asSlice() orelse return;
+    const font_data = g_compositor.font orelse return;
+    const w = g_compositor.fb.width;
+    const h = g_compositor.fb.height;
+    const bpp = g_compositor.fb.bpp;
+    const title_y: i32 = @intCast(h / 2 - 24);
+    const subtitle_y: i32 = title_y + 28;
+    font_data.drawText(fb_slice, w, h, bpp, 20, title_y, gfx_rebrand.config.title, gfx_rebrand.config.text_color, 0x00000000);
+    font_data.drawText(fb_slice, w, h, bpp, 20, subtitle_y, gfx_rebrand.config.subtitle, gfx_rebrand.config.accent_color, 0x00000000);
+
+    // Mark progress 100%
+    gfxBootSplash(1.0);
+}
+
+fn gfxTryInit() void {
+    if (builtin.target.cpu.arch != .x86_64) return;
+    if (builtin.target.os.tag != .freestanding) return;
+    const boot_info = @import("arch/x86_64/boot.zig");
+    const boot_fb = boot_info.getFramebufferInfo() orelse return;
+    if (boot_fb.addr == 0) return;
+    const fb_info = gfx_fb_mod.FramebufferInfo{
+        .addr = boot_fb.addr,
+        .pitch = boot_fb.pitch,
+        .width = boot_fb.width,
+        .height = boot_fb.height,
+        .bpp = boot_fb.bpp,
+        .type = boot_fb.type,
+    };
+    const font_ptr = gfx_font.Psf2Font.init(gfx_assets.font_psf) orelse return;
+    g_compositor = gfx_compositor.Compositor.init(fb_info);
+    g_compositor.setFont(font_ptr);
+    g_compositor.blitWallpaper(gfx_assets.wallpaper_ppm);
+    g_fb_available = true;
 }
 
 fn logError(msg: []const u8) void {

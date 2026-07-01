@@ -28,7 +28,7 @@ pub const Stack = struct {
     pub fn poll(self: *Stack) void {
         while (self.nic.receive()) |pkt| {
             if (pkt.len < ether.ETH_HLEN) continue;
-            const eth_hdr = @as(*const ether.EtherHeader, @ptrCast(pkt.ptr));
+            const eth_hdr = @as(*const ether.EtherHeader, @alignCast(@ptrCast(pkt.ptr)));
             const eth_type = @byteSwap(eth_hdr.ether_type);
 
             if (eth_type == @intFromEnum(ether.EtherType.arp)) {
@@ -41,7 +41,7 @@ pub const Stack = struct {
 
     fn handleArp(self: *Stack, pkt: []const u8) void {
         if (pkt.len < ether.ETH_HLEN + @sizeOf(arp.ArpPacket)) return;
-        const arp_pkt = @as(*const arp.ArpPacket, @ptrCast(pkt.ptr + ether.ETH_HLEN));
+        const arp_pkt = @as(*const arp.ArpPacket, @alignCast(@ptrCast(pkt.ptr + ether.ETH_HLEN)));
         if (!arp_pkt.isIpv4Eth()) return;
 
         self.arp_cache.update(arp_pkt.spa, arp_pkt.sha);
@@ -56,18 +56,18 @@ pub const Stack = struct {
     fn sendArpReply(self: *Stack, req: *const arp.ArpPacket) void {
         var buf: [ether.ETH_HLEN + @sizeOf(arp.ArpPacket)]u8 = undefined;
 
-        const eth_hdr = @as(*ether.EtherHeader, @ptrCast(&buf));
+        const eth_hdr = @as(*ether.EtherHeader, @alignCast(@ptrCast(&buf)));
         eth_hdr.* = ether.EtherHeader.init(req.sha, self.our_mac, @intFromEnum(ether.EtherType.arp));
 
         const arp_reply = arp.ArpPacket.initReply(self.our_mac, self.our_ip, req.sha, req.spa);
         @memcpy(buf[ether.ETH_HLEN..][0..@sizeOf(arp.ArpPacket)], std.mem.asBytes(&arp_reply));
 
-        self.nic.send(&buf);
+        _ = self.nic.send(&buf);
     }
 
     fn handleIpv4(self: *Stack, pkt: []const u8) void {
         if (pkt.len < ether.ETH_HLEN + ipv4_mod.IPV4_HLEN) return;
-        const ip_hdr = @as(*const ipv4_mod.Ipv4Header, @ptrCast(pkt.ptr + ether.ETH_HLEN));
+        const ip_hdr = @as(*const ipv4_mod.Ipv4Header, @alignCast(@ptrCast(pkt.ptr + ether.ETH_HLEN)));
         if (!ip_hdr.isForUs(self.our_ip)) return;
         if (!ip_hdr.verifyChecksum()) return;
 
@@ -84,7 +84,7 @@ pub const Stack = struct {
 
     fn handleIcmp(self: *Stack, ip_hdr: *const ipv4_mod.Ipv4Header, payload: []const u8) void {
         if (payload.len < icmp_mod.ICMP_HLEN) return;
-        const icmp_hdr = @as(*const icmp_mod.IcmpHeader, @ptrCast(payload.ptr));
+        const icmp_hdr = @as(*const icmp_mod.IcmpHeader, @alignCast(@ptrCast(payload.ptr)));
         if (icmp_hdr.type_ == @intFromEnum(icmp_mod.Type.echo_request)) {
             self.sendIcmpReply(ip_hdr, icmp_hdr, payload[icmp_mod.ICMP_HLEN..]);
         }
@@ -100,7 +100,7 @@ pub const Stack = struct {
 
         const dst_mac = self.resolveMac(ip_hdr.src) orelse return;
 
-        const eth_hdr = @as(*ether.EtherHeader, @ptrCast(&buf));
+        const eth_hdr = @as(*ether.EtherHeader, @alignCast(@ptrCast(&buf)));
         eth_hdr.* = ether.EtherHeader.init(dst_mac, self.our_mac, @intFromEnum(ether.EtherType.ipv4));
 
         const reply_ip = ipv4_mod.Ipv4Header.init(self.our_ip, ip_hdr.src, @intFromEnum(ipv4_mod.Protocol.icmp), payload_len);
@@ -111,7 +111,7 @@ pub const Stack = struct {
             @memcpy(buf[ether.ETH_HLEN + ipv4_mod.IPV4_HLEN + icmp_mod.ICMP_HLEN ..][0..icmp_data.len], icmp_data);
         }
 
-        self.nic.send(buf[0..total]);
+        _ = self.nic.send(buf[0..total]);
     }
 
     fn resolveMac(self: *Stack, ip: [4]u8) ?[6]u8 {
@@ -126,7 +126,7 @@ pub const Stack = struct {
         const total = ether.ETH_HLEN + total_len;
         if (total > buf.len) return;
 
-        const eth_hdr = @as(*ether.EtherHeader, @ptrCast(&buf));
+        const eth_hdr = @as(*ether.EtherHeader, @alignCast(@ptrCast(&buf)));
         eth_hdr.* = ether.EtherHeader.init(dst_mac, self.our_mac, @intFromEnum(ether.EtherType.ipv4));
 
         const ip_hdr = ipv4_mod.Ipv4Header.init(self.our_ip, dst_ip, protocol, payload.len);
@@ -134,19 +134,19 @@ pub const Stack = struct {
 
         @memcpy(buf[ether.ETH_HLEN + ipv4_mod.IPV4_HLEN ..][0..payload.len], payload);
 
-        self.nic.send(buf[0..total]);
+        _ = self.nic.send(buf[0..total]);
     }
 
     pub fn sendArpRequest(self: *Stack, target_ip: [4]u8) void {
         var buf: [ether.ETH_HLEN + @sizeOf(arp.ArpPacket)]u8 = undefined;
 
-        const eth_hdr = @as(*ether.EtherHeader, @ptrCast(&buf));
+        const eth_hdr = @as(*ether.EtherHeader, @alignCast(@ptrCast(&buf)));
         eth_hdr.* = ether.EtherHeader.init(ether.broadcastMac().*, self.our_mac, @intFromEnum(ether.EtherType.arp));
 
         const arp_req = arp.ArpPacket.initRequest(self.our_mac, self.our_ip, target_ip);
         @memcpy(buf[ether.ETH_HLEN..][0..@sizeOf(arp.ArpPacket)], std.mem.asBytes(&arp_req));
 
-        self.nic.send(&buf);
+        _ = self.nic.send(&buf);
     }
 
     pub fn setIp(self: *Stack, ip: [4]u8) void {

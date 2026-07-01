@@ -10,7 +10,7 @@ pub const EtherType = enum(u16) {
     _,
 };
 
-pub const EtherHeader = packed struct {
+pub const EtherHeader = extern struct {
     dst: [6]u8,
     src: [6]u8,
     ether_type: u16,

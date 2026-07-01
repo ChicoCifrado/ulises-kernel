@@ -12,7 +12,7 @@ pub const Opcode = enum(u16) {
     _,
 };
 
-pub const ArpPacket = packed struct {
+pub const ArpPacket = extern struct {
     htype: u16,
     ptype: u16,
     hlen: u8,

@@ -174,6 +174,18 @@ pub fn build(b: *std.Build) void {
         qemu_cmd.step.dependOn(&iso_cmd.step);
         run_step.dependOn(&qemu_cmd.step);
 
+        const run_gui_step = b.step("run-gui", "Boot kernel in QEMU with framebuffer display");
+        const qemu_gui = b.addSystemCommand(&.{
+            "qemu-system-x86_64",
+            "-serial", "file:console.log",
+            "-m", "512M",
+            "-cdrom", "/tmp/ulises.iso",
+            "-no-reboot", "-no-shutdown",
+            "-vga", "std",
+        });
+        qemu_gui.step.dependOn(&iso_cmd.step);
+        run_gui_step.dependOn(&qemu_gui.step);
+
         const run_direct_step = b.step("run-direct", "Boot kernel ELF directly in QEMU");
         const qemu_direct = b.addSystemCommand(&.{
             "qemu-system-x86_64",
