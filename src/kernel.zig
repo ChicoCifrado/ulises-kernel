@@ -32,6 +32,8 @@ const gfx_font = @import("gfx/font.zig");
 const gfx_fb_mod = @import("gfx/fb.zig");
 const gfx_assets = @import("gfx/assets.zig");
 const gfx_rebrand = @import("gfx/rebrand.zig");
+const fs_memfs = @import("fs/memfs.zig");
+const fs_vfs = @import("fs/vfs.zig");
 
 var page_mem: [1024 * 4096]u8 align(4096) = undefined;
 var nic: e1000.E1000 = undefined;
@@ -39,6 +41,8 @@ var g_stack: net_stack.Stack = undefined;
 var g_net_available: bool = false;
 var g_compositor: gfx_compositor.Compositor = undefined;
 var g_fb_available: bool = false;
+var g_memfs: fs_memfs.MemFs = undefined;
+var g_fs: fs_vfs.Fs = undefined;
 
 comptime {
     if (builtin.target.os.tag == .freestanding and !builtin.is_test) {
@@ -140,6 +144,34 @@ pub export fn kmainReal() noreturn {
     gfxTryInit();
     gfxBootSplash(0.08);
 
+    // Init in-memory filesystem
+    {
+        const alloc = global_alloc.get();
+        g_memfs = fs_memfs.MemFs.init(alloc);
+        g_fs = g_memfs.fs();
+        g_fs.current_uid = 0;
+        g_fs.current_gid = 0;
+        // Seed a few files
+        var f = g_fs.open("/version", .{ .write = true, .create = true, .truncate = true });
+        if (f) |*file| {
+            const data = "Ulises Kernel v1.0.0";
+            const to_copy = @min(data.len, file.data.len - file.pos);
+            @memcpy(file.data[file.pos..][0..to_copy], data[0..to_copy]);
+            file.pos += to_copy;
+            if (file.pos > file.size) file.size = file.pos;
+            g_fs.close(file);
+        }
+        var f2 = g_fs.open("/network", .{ .write = true, .create = true, .truncate = true });
+        if (f2) |*file| {
+            const data = "mainnet";
+            const to_copy = @min(data.len, file.data.len - file.pos);
+            @memcpy(file.data[file.pos..][0..to_copy], data[0..to_copy]);
+            file.pos += to_copy;
+            if (file.pos > file.size) file.size = file.pos;
+            g_fs.close(file);
+        }
+    }
+
     dbgWr('b');
     initBootDevices(&page_allocator);
     gfxBootSplash(0.30);
@@ -171,6 +203,7 @@ pub export fn kmainReal() noreturn {
 
     var ctx = shell.ShellContext{};
     if (g_net_available) ctx.net_stack = &g_stack;
+    ctx.fs = &g_fs;
     var con = console_mod.Console.init();
     con.clear();
     shell.run(&ctx, &con, &wallet_engine);
@@ -298,7 +331,8 @@ fn initBootDevices(page_allocator: *pmm.PageAllocator) void {
                     continue;
                 };
                 dbgWr('e');
-                g_stack = net_stack.Stack.init(&nic, .{ 10, 0, 2, 15 }, .{ 255, 255, 255, 0 }, .{ 10, 0, 2, 1 });
+                g_stack = net_stack.Stack.init(&nic, .{ 0, 0, 0, 0 }, .{ 0, 0, 0, 0 }, .{ 0, 0, 0, 0 });
+                g_stack.dhcp.start();
                 g_net_available = true;
                 break;
             }

@@ -6,6 +6,8 @@ const hash = @import("../bsv/hash.zig");
 const primitives = @import("../bsv/primitives.zig");
 const global_alloc = @import("../mem/global.zig");
 const net_stack = @import("../net/stack.zig");
+const vfs_mod = @import("../fs/vfs.zig");
+const elf_mod = @import("../elf.zig");
 
 const MAX_HISTORY = 64;
 const MAX_LINE = 256;
@@ -25,6 +27,7 @@ pub const ShellContext = struct {
     theme: Theme = .{},
     running: bool = true,
     net_stack: ?*net_stack.Stack = null,
+    fs: ?*vfs_mod.Fs = null,
 
     pub fn addToHistory(self: *ShellContext, line: []const u8) void {
         const allocator = global_alloc.get();
@@ -72,6 +75,11 @@ const builtins = [_]BuiltinCmd{
     .{ .name = "hash",    .help = "Hash input data with SHA256", .handler = cmdHash },
     .{ .name = "theme",   .help = "Change shell theme",         .handler = cmdTheme },
     .{ .name = "echo",    .help = "Print arguments",            .handler = cmdEcho },
+    .{ .name = "ls",      .help = "List files",                 .handler = cmdLs },
+    .{ .name = "cat",     .help = "Show file contents",         .handler = cmdCat },
+    .{ .name = "write",   .help = "Write data to a file",       .handler = cmdWrite },
+    .{ .name = "dhcp",    .help = "Show DHCP status / restart", .handler = cmdDhcp },
+    .{ .name = "elf",     .help = "Load and inspect an ELF binary", .handler = cmdElf },
 };
 
 pub fn run(ctx: *ShellContext, con: *console.Console, wallet: ?*brc100.KernelWallet) void {
@@ -281,6 +289,128 @@ fn cmdTheme(args: []const u8, con: *console.Console, ctx: *ShellContext) void {
 
 fn cmdEcho(args: []const u8, con: *console.Console, _: *ShellContext) void {
     con.writeFmt("  {s}\n", .{args});
+}
+
+fn cmdLs(args: []const u8, con: *console.Console, ctx: *ShellContext) void {
+    const fs = ctx.fs orelse {
+        con.write("  fs: not available\n"); return;
+    };
+    const allocator = global_alloc.get();
+    const entries = fs.list(args, allocator) orelse {
+        con.write("  (empty or error)\n"); return;
+    };
+    defer allocator.free(entries);
+    const long = std.mem.eql(u8, args, "-l");
+    for (entries) |name| {
+        if (long) {
+            const st = fs.stat(name);
+            if (st) |s| {
+                const p = s.perm;
+                var perm_buf: [9]u8 = undefined;
+                perm_buf[0] = if ((p & @as(u16, 0o400)) != 0) @as(u8, 'r') else @as(u8, '-');
+                perm_buf[1] = if ((p & @as(u16, 0o200)) != 0) @as(u8, 'w') else @as(u8, '-');
+                perm_buf[2] = if ((p & @as(u16, 0o100)) != 0) @as(u8, 'x') else @as(u8, '-');
+                perm_buf[3] = if ((p & @as(u16, 0o040)) != 0) @as(u8, 'r') else @as(u8, '-');
+                perm_buf[4] = if ((p & @as(u16, 0o020)) != 0) @as(u8, 'w') else @as(u8, '-');
+                perm_buf[5] = if ((p & @as(u16, 0o010)) != 0) @as(u8, 'x') else @as(u8, '-');
+                perm_buf[6] = if ((p & @as(u16, 0o004)) != 0) @as(u8, 'r') else @as(u8, '-');
+                perm_buf[7] = if ((p & @as(u16, 0o002)) != 0) @as(u8, 'w') else @as(u8, '-');
+                perm_buf[8] = if ((p & @as(u16, 0o001)) != 0) @as(u8, 'x') else @as(u8, '-');
+                con.writeFmt("  {s} {d:>4} {d} {d} {s}\n", .{ &perm_buf, s.size, s.uid, s.gid, name });
+            } else {
+                con.writeFmt("  {s}\n", .{name});
+            }
+        } else {
+            con.writeFmt("  {s}\n", .{name});
+        }
+    }
+}
+
+fn cmdCat(args: []const u8, con: *console.Console, ctx: *ShellContext) void {
+    const fs = ctx.fs orelse {
+        con.write("  fs: not available\n"); return;
+    };
+    const path = std.mem.trim(u8, args, " ");
+    if (path.len == 0) { con.write("  usage: cat <path>\n"); return; }
+    var file = fs.open(path, .{ .read = true }) orelse {
+        con.writeFmt("  cat: {s}: not found\n", .{path}); return;
+    };
+    defer fs.close(&file);
+    con.write(file.data[0..file.size]);
+    con.write("\n");
+}
+
+fn cmdWrite(args: []const u8, con: *console.Console, ctx: *ShellContext) void {
+    const fs = ctx.fs orelse {
+        con.write("  fs: not available\n"); return;
+    };
+    const space = std.mem.indexOfScalar(u8, args, ' ') orelse {
+        con.write("  usage: write <path> <data>\n"); return;
+    };
+    const path = std.mem.trim(u8, args[0..space], " ");
+    const data = std.mem.trim(u8, args[space + 1 ..], " ");
+    var file = fs.open(path, .{ .write = true, .create = true, .truncate = true }) orelse {
+        con.writeFmt("  write: {s}: failed\n", .{path}); return;
+    };
+    defer fs.close(&file);
+    const to_copy = @min(data.len, file.data.len);
+    @memcpy(file.data[0..to_copy], data[0..to_copy]);
+    file.size = to_copy;
+    con.writeFmt("  wrote {d} bytes to {s}\n", .{data.len, path});
+}
+
+fn cmdDhcp(args: []const u8, con: *console.Console, ctx: *ShellContext) void {
+    const ns = ctx.net_stack orelse {
+        con.write("  network: not available\n"); return;
+    };
+    const d = &ns.dhcp;
+    const state_str = switch (d.state) {
+        .idle => "idle",
+        .selecting => "selecting (discover)",
+        .requesting => "requesting",
+        .bound => "bound",
+    };
+    con.writeFmt("  DHCP state: {s}\n", .{state_str});
+    if (d.state == .bound) {
+        con.writeFmt("  IP: {}.{}.{}.{}\n", .{ d.our_ip[0], d.our_ip[1], d.our_ip[2], d.our_ip[3] });
+        con.writeFmt("  Gateway: {}.{}.{}.{}\n", .{ d.gateway[0], d.gateway[1], d.gateway[2], d.gateway[3] });
+        con.writeFmt("  Netmask: {}.{}.{}.{}\n", .{ d.subnet_mask[0], d.subnet_mask[1], d.subnet_mask[2], d.subnet_mask[3] });
+        con.writeFmt("  DNS: {}.{}.{}.{}\n", .{ d.dns[0], d.dns[1], d.dns[2], d.dns[3] });
+        con.writeFmt("  Lease: {}s\n", .{d.lease_time});
+    }
+    const trimmed = std.mem.trim(u8, args, " ");
+    if (std.mem.eql(u8, trimmed, "renew") or std.mem.eql(u8, trimmed, "restart")) {
+        d.start();
+        con.write("  DHCP renew started\n");
+    }
+}
+
+fn cmdElf(args: []const u8, con: *console.Console, ctx: *ShellContext) void {
+    const fs = ctx.fs orelse {
+        con.write("  fs: not available\n"); return;
+    };
+    const path = std.mem.trim(u8, args, " ");
+    if (path.len == 0) { con.write("  usage: elf <path>\n"); return; }
+    var file = fs.open(path, .{ .read = true }) orelse {
+        con.writeFmt("  elf: {s}: not found\n", .{path}); return;
+    };
+    defer fs.close(&file);
+    var segs: [16]elf_mod.LoadedSegment = undefined;
+    const info = elf_mod.parseElf(file.data[0..file.size], &segs) orelse {
+        con.write("  not a valid ELF64 binary\n"); return;
+    };
+    con.writeFmt("  Entry: 0x{x:0>16}\n", .{info.entry});
+    con.writeFmt("  Segments: {d}\n", .{info.segments.len});
+    for (info.segments, 0..) |seg, i| {
+        const flags_str = [_]u8{
+            if (seg.flags & 4 != 0) 'r' else '-',
+            if (seg.flags & 2 != 0) 'w' else '-',
+            if (seg.flags & 1 != 0) 'x' else '-',
+        };
+        con.writeFmt("    [{d}] 0x{x:0>16} - 0x{x:0>16}  {s}  filesz={x} memsz={x}\n", .{
+            i, seg.vaddr, seg.vaddr + seg.memsz, flags_str, seg.filesz, seg.memsz,
+        });
+    }
 }
 
 test "shell context init" {

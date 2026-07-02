@@ -4,6 +4,8 @@ const ether = @import("ether.zig");
 const arp = @import("arp.zig");
 const ipv4_mod = @import("ipv4.zig");
 const icmp_mod = @import("icmp.zig");
+const udp_mod = @import("udp.zig");
+const dhcp = @import("dhcp.zig");
 const e1000_mod = @import("e1000.zig");
 
 pub const Stack = struct {
@@ -13,6 +15,7 @@ pub const Stack = struct {
     our_ip: [4]u8,
     our_netmask: [4]u8,
     our_gateway: [4]u8,
+    dhcp: dhcp.DhcpClient = .{},
 
     pub fn init(nic: *e1000_mod.E1000, ip: [4]u8, netmask: [4]u8, gateway: [4]u8) Stack {
         return .{
@@ -35,6 +38,16 @@ pub const Stack = struct {
                 self.handleArp(pkt);
             } else if (eth_type == @intFromEnum(ether.EtherType.ipv4)) {
                 self.handleIpv4(pkt);
+            }
+        }
+
+        self.dhcp.tickPoll(self.our_mac, self.nic);
+
+        if (self.dhcp.state == .bound) {
+            if (!std.mem.eql(u8, &self.our_ip, &self.dhcp.our_ip)) {
+                self.setIp(self.dhcp.our_ip);
+                self.setNetmask(self.dhcp.subnet_mask);
+                self.setGateway(self.dhcp.gateway);
             }
         }
     }
@@ -78,7 +91,21 @@ pub const Stack = struct {
 
         switch (ip_hdr.protocol) {
             @intFromEnum(ipv4_mod.Protocol.icmp) => self.handleIcmp(ip_hdr, payload),
+            @intFromEnum(ipv4_mod.Protocol.udp) => self.handleUdp(ip_hdr, payload),
             else => {},
+        }
+    }
+
+    fn handleUdp(self: *Stack, _: *const ipv4_mod.Ipv4Header, payload: []const u8) void {
+        if (payload.len < udp_mod.UDP_HLEN) return;
+        const udp_hdr = @as(*const udp_mod.UdpHeader, @alignCast(@ptrCast(payload.ptr)));
+        const dst_port = @byteSwap(udp_hdr.dst_port);
+        if (dst_port == dhcp.DHCP_CLIENT_PORT) {
+            const dhcp_data = payload[udp_mod.UDP_HLEN..];
+            if (dhcp_data.len < @sizeOf(dhcp.DhcpMessage)) return;
+            const dhcp_msg = @as(*const dhcp.DhcpMessage, @alignCast(@ptrCast(dhcp_data.ptr)));
+            const opts = dhcp_data[@sizeOf(dhcp.DhcpMessage)..];
+            self.dhcp.handleReply(dhcp_msg, opts);
         }
     }
 
@@ -120,7 +147,8 @@ pub const Stack = struct {
     }
 
     pub fn sendIpv4(self: *Stack, dst_ip: [4]u8, protocol: u8, payload: []const u8) void {
-        const dst_mac = self.resolveMac(dst_ip) orelse return;
+        const is_bcast = for (dst_ip) |b| if (b != 0xFF) break false else true;
+        const dst_mac = if (is_bcast) ether.broadcastMac().* else (self.resolveMac(dst_ip) orelse return);
         const total_len = ipv4_mod.IPV4_HLEN + payload.len;
         var buf: [ether.ETH_HLEN + ipv4_mod.IPV4_HLEN + 1500]u8 = undefined;
         const total = ether.ETH_HLEN + total_len;
@@ -135,6 +163,23 @@ pub const Stack = struct {
         @memcpy(buf[ether.ETH_HLEN + ipv4_mod.IPV4_HLEN ..][0..payload.len], payload);
 
         _ = self.nic.send(buf[0..total]);
+    }
+
+    pub fn sendUdp(self: *Stack, dst_ip: [4]u8, dst_port: u16, src_port: u16, data: []const u8) void {
+        const udp_len = udp_mod.UDP_HLEN + data.len;
+        var buf: [udp_mod.UDP_HLEN + 1500]u8 = undefined;
+        if (udp_len > buf.len) return;
+
+        const udp_hdr = @as(*udp_mod.UdpHeader, @alignCast(@ptrCast(&buf)));
+        udp_hdr.* = .{
+            .src_port = @byteSwap(src_port),
+            .dst_port = @byteSwap(dst_port),
+            .length = @byteSwap(@as(u16, @intCast(udp_len))),
+            .checksum = 0,
+        };
+        @memcpy(buf[udp_mod.UDP_HLEN..][0..data.len], data);
+
+        self.sendIpv4(dst_ip, @intFromEnum(ipv4_mod.Protocol.udp), buf[0..udp_len]);
     }
 
     pub fn sendArpRequest(self: *Stack, target_ip: [4]u8) void {
