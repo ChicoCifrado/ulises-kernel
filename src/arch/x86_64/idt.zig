@@ -144,6 +144,14 @@ const stubs: [NUM_VECTORS]*const fn () callconv(.naked) void = blk: {
 
 pub fn picDisable() void {
     const x86_64 = @import("../x86_64.zig");
+    x86_64.outb(0x20, 0x11);
+    x86_64.outb(0xA0, 0x11);
+    x86_64.outb(0x21, 0x20);
+    x86_64.outb(0xA1, 0x28);
+    x86_64.outb(0x21, 0x04);
+    x86_64.outb(0xA1, 0x02);
+    x86_64.outb(0x21, 0x03);
+    x86_64.outb(0xA1, 0x03);
     x86_64.outb(0x21, 0xFF);
     x86_64.outb(0xA1, 0xFF);
 }

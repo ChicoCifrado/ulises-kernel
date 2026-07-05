@@ -13,7 +13,7 @@ pub const FramebufferInfo = struct {
     }
 
     pub fn asSlice(self: *const FramebufferInfo) ?[]u8 {
-        const size = self.pitch * self.height;
+        const size = @as(usize, self.pitch) * @as(usize, self.height);
         return @as([*]u8, @ptrFromInt(@as(usize, @intCast(self.addr))))[0..size];
     }
 

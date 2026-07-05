@@ -8,54 +8,61 @@ fn isBigEndian() bool {
 }
 
 pub const Psf2Font = struct {
-    header: *const Psf2Header,
+    glyph_width: u32,
+    glyph_height: u32,
+    num_glyphs: u32,
+    char_size: u32,
     glyph_data: []const u8,
 
     pub fn init(data: []const u8) ?Psf2Font {
         if (data.len < @sizeOf(Psf2Header)) return null;
-        const h: *const Psf2Header = @ptrCast(@alignCast(data.ptr));
+        var hdr: Psf2Header = undefined;
+        @memcpy(std.mem.asBytes(&hdr), data[0..@sizeOf(Psf2Header)]);
         if (isBigEndian()) {
-            if (h.magic != 0x864ab572) return null;
+            if (hdr.magic != 0x864ab572) return null;
         } else {
-            if (h.magic != psf2_magic) return null;
+            if (hdr.magic != psf2_magic) return null;
         }
-        if (h.version != 0) return null;
-        if (h.header_size < @sizeOf(Psf2Header)) return null;
-        const expected_size: usize = h.header_size + h.length * h.charsize;
+        if (hdr.version != 0) return null;
+        if (hdr.header_size < @sizeOf(Psf2Header)) return null;
+        const expected_size: usize = hdr.header_size + hdr.length * hdr.charsize;
         if (data.len < expected_size) return null;
         return Psf2Font{
-            .header = h,
-            .glyph_data = data[h.header_size..expected_size],
+            .glyph_width = hdr.width,
+            .glyph_height = hdr.height,
+            .num_glyphs = hdr.length,
+            .char_size = hdr.charsize,
+            .glyph_data = data[hdr.header_size..expected_size],
         };
     }
 
     pub fn width(self: *const Psf2Font) u32 {
-        return self.header.width;
+        return self.glyph_width;
     }
 
     pub fn height(self: *const Psf2Font) u32 {
-        return self.header.height;
+        return self.glyph_height;
     }
 
     pub fn numGlyphs(self: *const Psf2Font) u32 {
-        return self.header.length;
+        return self.num_glyphs;
     }
 
     pub fn glyphBytes(self: *const Psf2Font) u32 {
-        return self.header.charsize;
+        return self.char_size;
     }
 
     pub fn getGlyph(self: *const Psf2Font, cp: u32) ?[]const u8 {
-        if (cp >= self.header.length) return null;
-        const off = self.header.charsize * cp;
-        return self.glyph_data[off..][0..self.header.charsize];
+        if (cp >= self.num_glyphs) return null;
+        const off = self.char_size * cp;
+        return self.glyph_data[off..][0..self.char_size];
     }
 
     /// Blit a glyph to a framebuffer at (x, y) with given fg/bg colors.
     /// fb_pitch is bytes per scanline in the framebuffer.
     pub fn blitGlyph(self: *const Psf2Font, fb: []u8, fb_width: usize, fb_height: usize, fb_bpp: usize, x: i32, y: i32, cp: u32, fg: u32, bg: u32) void {
-        const gw = self.header.width;
-        const gh = self.header.height;
+        const gw = self.glyph_width;
+        const gh = self.glyph_height;
         const glyph = self.getGlyph(cp) orelse return;
 
         const bytes_per_pixel: usize = if (fb_bpp == 32) 4 else if (fb_bpp == 24) 3 else if (fb_bpp == 16) 2 else return;
@@ -105,7 +112,7 @@ pub const Psf2Font = struct {
                 continue;
             }
             self.blitGlyph(fb, fb_width, fb_height, fb_bpp, cx, y, ch, fg, bg);
-            cx += @as(i32, @intCast(self.header.width));
+            cx += @as(i32, @intCast(self.glyph_width));
         }
     }
 };

@@ -34,6 +34,10 @@ const gfx_assets = @import("gfx/assets.zig");
 const gfx_rebrand = @import("gfx/rebrand.zig");
 const fs_memfs = @import("fs/memfs.zig");
 const fs_vfs = @import("fs/vfs.zig");
+const fs_ext4 = @import("fs/ext4.zig");
+const fs_ata = @import("fs/ata.zig");
+const fs_gpt = @import("fs/gpt.zig");
+const fs_blockdev = @import("fs/blockdev.zig");
 
 var page_mem: [1024 * 4096]u8 align(4096) = undefined;
 var nic: e1000.E1000 = undefined;
@@ -42,6 +46,7 @@ var g_net_available: bool = false;
 var g_compositor: gfx_compositor.Compositor = undefined;
 var g_fb_available: bool = false;
 var g_memfs: fs_memfs.MemFs = undefined;
+var g_ext4_instance: ?fs_ext4.Ext4Fs = null;
 var g_fs: fs_vfs.Fs = undefined;
 
 comptime {
@@ -80,10 +85,13 @@ fn logFn(
     }
 }
 
-pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, _: ?usize) noreturn {
+pub fn panic(msg: []const u8, _: ?*std.builtin.StackTrace, ret_addr: ?usize) noreturn {
     if (builtin.target.os.tag == .freestanding and !builtin.is_test) {
         const logger = @import("hal/logger.zig");
         logger.panicLog(msg);
+        if (ret_addr) |ra| {
+            logger.writeFmt(" @ 0x{x}\n", .{ra});
+        }
     }
     var h = hal.Hal.init();
     h.halt(.panic);
@@ -96,38 +104,14 @@ pub export fn kmain() noreturn {
 pub export fn kmainReal() noreturn {
     initLogger();
     var h = hal.Hal.init();
-    {
-        const log = @import("hal/logger.zig");
-        log.write("[Z1]\n");
-    }
     initPlatform();
-    {
-        const log = @import("hal/logger.zig");
-        log.write("[ZA]\n");
-    }
     var page_allocator = pmm.PageAllocator.init(&page_mem, page_mem.len, 4096);
-    {
-        const log = @import("hal/logger.zig");
-        log.write("[ZB]\n");
-    }
     if (builtin.target.cpu.arch == .x86_64) {
         smp.initSmp(&page_allocator);
     }
-    {
-        const log = @import("hal/logger.zig");
-        log.write("[ZC]\n");
-    }
     initInterrupts();
-    {
-        const log = @import("hal/logger.zig");
-        log.write("[ZD]\n");
-    }
 
     if (builtin.target.os.tag == .freestanding) {
-        {
-            const log = @import("hal/logger.zig");
-            log.write("[GA]\n");
-        }
         global_alloc.init(&page_allocator, 1024 * 1024) catch {
             if (builtin.target.cpu.arch == .x86_64) {
                 const log = @import("hal/logger.zig");
@@ -135,10 +119,6 @@ pub export fn kmainReal() noreturn {
             }
             h.halt(.panic);
         };
-        {
-            const log = @import("hal/logger.zig");
-        log.write("[GB]\n");
-    }
     }
 
     gfxTryInit();
@@ -174,6 +154,28 @@ pub export fn kmainReal() noreturn {
 
     dbgWr('b');
     initBootDevices(&page_allocator);
+
+    if (builtin.target.cpu.arch == .x86_64) {
+        if (fs_ata.AtaBlockDev.detect(0x1F0, 0x3F6, false)) |ata_val| {
+            var ata = ata_val;
+            var bdev = ata.blockDev();
+            var gpt_entries: [128]fs_gpt.GptPartitionEntry = undefined;
+            if (fs_gpt.GptDisk.init(&bdev, &gpt_entries)) |*gpt| {
+                for (0..gpt.entries.len) |i| {
+                    const part = &gpt.entries[i];
+                    if (part.first_lba == 0) continue;
+                    var part_dev = fs_blockdev.SubBlockDev.init(&bdev, part.first_lba);
+                    var subdev = part_dev.blockDev();
+                    if (fs_ext4.Ext4Fs.init(&subdev, global_alloc.get())) |ext4| {
+                        g_ext4_instance = ext4;
+                        g_fs = g_ext4_instance.?.fs();
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     gfxBootSplash(0.30);
 
     smp.startAps();
@@ -269,9 +271,9 @@ fn initInterrupts() void {
                     }
                 };
                 idt_mod.init(Handler.callback);
-                timer_mod.init(Handler.callback);
                 sched.init();
                 x86_64.sti();
+                timer_mod.init(Handler.callback);
             },
             .aarch64, .arm => {
                 const arch = @import("arch/aarch64.zig");
@@ -293,23 +295,8 @@ fn initInterrupts() void {
 fn initBootDevices(page_allocator: *pmm.PageAllocator) void {
     if (builtin.target.cpu.arch == .x86_64) {
         const x86_64 = @import("arch/x86_64.zig");
-        {
-            const log = @import("hal/logger.zig");
-            log.write("[BD]\n");
-        }
-        dbgWr('M');
-        {
-            const log = @import("hal/logger.zig");
-            log.write("[MM]\n");
-        }
         pci.mapMmioBars(page_allocator);
-        {
-            const log = @import("hal/logger.zig");
-            log.write("[mm]\n");
-        }
-        dbgWr('m');
         usb.init();
-        dbgWr('U');
 
         const allocator = global_alloc.get();
         const pci_devs = pci.enumerate(allocator) catch {
@@ -349,10 +336,12 @@ fn gfxBootSplash(progress: f64) void {
     if (!g_fb_available) return;
     if (builtin.target.cpu.arch != .x86_64) return;
     if (builtin.target.os.tag != .freestanding) return;
+    if (g_compositor.fb.width == 0) return;
     const bar_w = @min(g_compositor.fb.width / 2, 400);
     const bar_h: u32 = 6;
     const bar_x = (g_compositor.fb.width - bar_w) / 2;
     const bar_y = g_compositor.fb.height - 40;
+    if (bar_y >= g_compositor.fb.height) return;
     g_compositor.drawProgressBar(bar_x, bar_y, bar_w, bar_h, @as(f32, @floatCast(progress)), gfx_rebrand.config.progress_color, gfx_rebrand.config.progress_bg);
 }
 
@@ -360,6 +349,7 @@ fn gfxBootFinal() void {
     if (!g_fb_available) return;
     if (builtin.target.cpu.arch != .x86_64) return;
     if (builtin.target.os.tag != .freestanding) return;
+    if (g_compositor.fb.width == 0 or g_compositor.fb.height == 0) return;
     const fb_slice = g_compositor.fb.asSlice() orelse return;
     const font_data = g_compositor.font orelse return;
     const w = g_compositor.fb.width;

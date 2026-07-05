@@ -48,9 +48,7 @@ pub const mapMmioBars = if (builtin.target.cpu.arch == .x86_64) struct {
                             phys |= @as(u64, upper) << 32;
                         }
                         if (phys >= 0xC0000000) {
-                            log.write("[PM]\n");
                             x86_64.mapMmioRegion(phys, 4096, page_alloc);
-                            log.write("[pm]\n");
                         }
                     }
                     bar_offs += 4;
