@@ -18,13 +18,13 @@ fn allocFn(ctx: *anyopaque, len: usize, alignment: std.mem.Alignment, ret_addr: 
     if (!initialized) return null;
     const align_bytes = alignment.toByteUnits();
 
-    // Check free stack LIFO for a suitable block
+    // Check free stack LIFO for a suitable block (must match both size and alignment)
     var i: usize = free_count;
     while (i > 0) {
         i -= 1;
         const f_ptr = free_ptr[i];
         const f_len = free_len[i];
-        if (f_len >= len) {
+        if (f_len >= len and @intFromPtr(f_ptr) & (align_bytes - 1) == 0) {
             // Remove from free list
             if (i + 1 < free_count) {
                 free_ptr[i] = free_ptr[free_count - 1];

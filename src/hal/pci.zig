@@ -21,7 +21,8 @@ pub const PciDevice = struct {
     bar0_is_64bit: bool,
 };
 
-extern fn pciConfigReadC(bus: u8, device: u8, func: u8, offset: u8) u32;
+pub extern fn pciConfigReadC(bus: u8, device: u8, func: u8, offset: u8) u32;
+pub extern fn pciConfigWriteC(bus: u8, device: u8, func: u8, offset: u8, value: u32) void;
 
 const log = @import("logger.zig");
 

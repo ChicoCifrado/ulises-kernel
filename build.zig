@@ -35,6 +35,7 @@ pub fn build(b: *std.Build) void {
 
     if (arch == .x86_64 and os == .freestanding) {
         asm_obj.root_module.addAssemblyFile(b.path("src/arch/x86_64/pci_config_read.S"));
+        asm_obj.root_module.addAssemblyFile(b.path("src/arch/x86_64/pci_config_write.S"));
         asm_obj.root_module.addAssemblyFile(b.path("src/arch/x86_64/boot32.S"));
 
         // Generate ISR stubs for x86_64
