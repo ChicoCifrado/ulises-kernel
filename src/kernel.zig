@@ -35,6 +35,7 @@ const gfx_rebrand = @import("gfx/rebrand.zig");
 const fs_memfs = @import("fs/memfs.zig");
 const fs_vfs = @import("fs/vfs.zig");
 const fs_ext4 = @import("fs/ext4.zig");
+const fs_btrfs = @import("fs/btrfs.zig");
 const fs_ahci = @import("fs/ahci.zig");
 const fs_ata = @import("fs/ata.zig");
 const fs_gpt = @import("fs/gpt.zig");
@@ -48,6 +49,7 @@ var g_compositor: gfx_compositor.Compositor = undefined;
 var g_fb_available: bool = false;
 var g_memfs: fs_memfs.MemFs = undefined;
 var g_ext4_instance: ?fs_ext4.Ext4Fs = null;
+var g_btrfs_instance: ?fs_btrfs.BtrfsFs = null;
 var g_fs: fs_vfs.Fs = undefined;
 
 comptime {
@@ -157,41 +159,39 @@ pub export fn kmainReal() noreturn {
     initBootDevices(&page_allocator);
 
     if (builtin.target.cpu.arch == .x86_64) {
-        if (fs_ahci.AhciBlockDev.detect(&page_allocator)) |ahci_val| {
-            @import("hal/logger.zig").write("[AHCI] AHCI device found\n");
-            var ahci = ahci_val;
-            var bdev = ahci.blockDev();
-            var gpt_entries: [128]fs_gpt.GptPartitionEntry = undefined;
-            if (fs_gpt.GptDisk.init(&bdev, &gpt_entries)) |*gpt| {
-                for (0..gpt.entries.len) |i| {
-                    const part = &gpt.entries[i];
-                    if (part.first_lba == 0) continue;
-                    var part_dev = fs_blockdev.SubBlockDev.init(&bdev, part.first_lba);
-                    var subdev = part_dev.blockDev();
-                    if (fs_ext4.Ext4Fs.init(&subdev, global_alloc.get())) |ext4| {
-                        g_ext4_instance = ext4;
-                        g_fs = g_ext4_instance.?.fs();
-                        break;
-                    }
-                }
-            }
-        } else if (fs_ata.AtaBlockDev.detect(0x1F0, 0x3F6, false)) |ata_val| {
+        const log = @import("hal/logger.zig");
+        if (fs_ata.AtaBlockDev.detect(0x1F0, 0x3F6, false)) |ata_val| {
+            log.write("[ATA] detected\n");
             var ata = ata_val;
             var bdev = ata.blockDev();
             var gpt_entries: [128]fs_gpt.GptPartitionEntry = undefined;
             if (fs_gpt.GptDisk.init(&bdev, &gpt_entries)) |*gpt| {
+                log.write("[GPT] found\n");
                 for (0..gpt.entries.len) |i| {
                     const part = &gpt.entries[i];
                     if (part.first_lba == 0) continue;
+                    log.writeFmt("[PART] lba={d}\n", .{part.first_lba});
                     var part_dev = fs_blockdev.SubBlockDev.init(&bdev, part.first_lba);
                     var subdev = part_dev.blockDev();
-                    if (fs_ext4.Ext4Fs.init(&subdev, global_alloc.get())) |ext4| {
+                    if (fs_btrfs.BtrfsFs.init(&subdev, global_alloc.get())) |btrfs| {
+                        log.write("[BTRFS] mounted\n");
+                        g_btrfs_instance = btrfs;
+                        g_fs = g_btrfs_instance.?.fs();
+                        break;
+                    } else if (fs_ext4.Ext4Fs.init(&subdev, global_alloc.get())) |ext4| {
+                        log.write("[EXT4] mounted\n");
                         g_ext4_instance = ext4;
                         g_fs = g_ext4_instance.?.fs();
                         break;
+                    } else {
+                        log.write("[EXT4] init FAIL\n");
                     }
                 }
+            } else {
+                log.write("[GPT] FAIL\n");
             }
+        } else {
+            log.write("[ATA] detect FAIL\n");
         }
     }
 
