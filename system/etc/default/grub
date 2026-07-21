@@ -1,0 +1,13 @@
+GRUB_DEFAULT=0
+GRUB_TIMEOUT=0
+GRUB_DISTRIBUTOR="UlisesOS"
+GRUB_CMDLINE_LINUX_DEFAULT="loglevel=3 quiet splash plymouth.ignore-serial-consoles"
+GRUB_CMDLINE_LINUX="console=tty1 rd.luks=0 rd.lvm=0 rd.md=0 rd.dm=0 rd.systemd.gpt_auto=no"
+GRUB_PRELOAD_MODULES="part_gpt part_msdos"
+GRUB_TIMEOUT_STYLE=menu
+GRUB_GFXMODE=auto
+GRUB_GFXPAYLOAD_LINUX=keep
+GRUB_DISABLE_RECOVERY=true
+GRUB_COLOR_NORMAL="light-gray/black"
+GRUB_COLOR_HIGHLIGHT="light-magenta/black"
+GRUB_THEME="/usr/share/grub/themes/breeze/theme.txt"

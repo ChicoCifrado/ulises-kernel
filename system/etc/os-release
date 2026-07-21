@@ -1,0 +1,13 @@
+NAME="UlisesOS"
+PRETTY_NAME="UlisesOS 1.0"
+VERSION_CODENAME=ulises
+ID=ulises
+ID_LIKE=arch
+ANSI_COLOR="1;35"
+HOME_URL="https://github.com/ChicoCifrado/ulises-kernel"
+SUPPORT_URL="https://github.com/ChicoCifrado/ulises-kernel"
+BUG_REPORT_URL="https://github.com/ChicoCifrado/ulises-kernel"
+LOGO=ulises
+VARIANT_ID=ulisesos
+VERSION_ID=1.0
+BUILD_ID=20260721
